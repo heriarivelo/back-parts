@@ -1,13 +1,13 @@
 node_modules
 # Keep environment variables out of version control
-.env
+# .env
 # 1️⃣ DÉPENDANCES 
 /node_modules       # Ignore tous les modules npm (toujours exclure)
 /.pnp               # Plug'n'Play (si vous utilisez Yarn)
 .pnp.js
 
 # 2️⃣ ENVIRONNEMENT & SECRETS
-.env                # Fichiers de variables sensibles (DB, API keys, etc.)
+# .env                # Fichiers de variables sensibles (DB, API keys, etc.)
 .env.local          # Fichiers locaux override
 .env.*              # Tous les fichiers d'environnement (dev, test, prod)
 !.env.example       # (Optionnel) Gardez un exemple versionné
