@@ -6,7 +6,8 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "postinstall": "prisma generate",
-    "build": "prisma generate && prisma migrate deploy",
+    "build": "prisma generate",
+    "postbuild": "prisma migrate deploy",
     "clean": "rimraf node_modules/.prisma node_modules/.cache"
   },
   "keywords": [],
