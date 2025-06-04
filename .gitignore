@@ -1,0 +1,27 @@
+node_modules
+# Keep environment variables out of version control
+.env
+# 1️⃣ DÉPENDANCES 
+/node_modules       # Ignore tous les modules npm (toujours exclure)
+/.pnp               # Plug'n'Play (si vous utilisez Yarn)
+.pnp.js
+
+# 2️⃣ ENVIRONNEMENT & SECRETS
+.env                # Fichiers de variables sensibles (DB, API keys, etc.)
+.env.local          # Fichiers locaux override
+.env.*              # Tous les fichiers d'environnement (dev, test, prod)
+!.env.example       # (Optionnel) Gardez un exemple versionné
+
+# 3️⃣ PRISMA (Spécifique à votre stack)
+/generated          # Dossier généré par Prisma Client (recréé avec `prisma generate`)
+/prisma/migrations  # Migrations DB (peuvent être regénérées)
+!prisma/migrations/.gitkeep  # (Optionnel) Garde le dossier mais ignore son contenu
+
+# 4️⃣ LOGS & CACHE
+*.log               # Fichiers de logs (npm, debug, etc.)
+.cache/             # Cache des outils (Babel, ESLint, etc.)
+
+# 5️⃣ SYSTÈME & IDE
+.DS_Store           # Fichiers système macOS
+.idea/              # Configuration JetBrains (WebStorm, etc.)
+.vscode/            # Configuration VS Code (si partagée, à versionner avec précaution)

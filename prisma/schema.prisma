@@ -1,0 +1,352 @@
+// Schema Prisma pour un système de vente de pièces automobiles
+// Version corrigée et améliorée tout en conservant la structure des imports
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  commandes CommandeVente[] // Commandes créées par cet utilisateur
+  factures  Facture[]       // Factures générées par cet utilisateur
+  paiements Paiement[] 
+}
+
+enum Role {
+  USER
+  ADMIN
+  MANAGER
+}
+
+model Product {
+  id             Int               @id @default(autoincrement())
+  referenceCode  String            @unique @map("reference_code") // Code interne unique et stable
+  codeArt        String?           @unique @map("code_art") // Ancien champ conservé pour compatibilité
+  oem            String?           // Référence constructeur (le plus important pour le matching)
+  marque         String?           // Marque de la pièce
+  libelle        String?           // Libellé complet
+  category       String?           // Catégorie de la pièce
+  autoFinal      String?           @map("auto_final")// Véhicules compatibles
+  
+  // Relations
+  stocks         Stock[]           @relation("ProductStocks")
+  importDetails  ImportedPart[]    @relation("ProductDetails")
+  stockMovements StockMovement[] // 👈 Add this
+  priceHistories PriceHistory[]  //
+  commandes      PiecesCommande[]
+  
+  // Timestamps
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  // Index pour les recherches fréquentes
+  @@index([oem])
+  @@index([marque])
+  @@index([referenceCode])
+}
+
+model Import {
+  id            Int             @id @default(autoincrement())
+  reference     String
+  description   String
+  tauxDeChange  Decimal         @map("taux_de_change")
+  fretAvecDD    Decimal         @map("fret_avec_dd")
+  fretSansDD    Decimal         @map("fret_sans_dd")
+  douane        Decimal
+  tva           Decimal
+  marge         Decimal
+  importedAt    DateTime        @default(now())
+  fileName      String
+  status        ImportStatus    @default(COMPLETED)
+  
+  // Relations
+  parts         ImportedPart[]  @relation("ImportParts")
+}
+
+enum ImportStatus {
+  EN_ATTENTE
+  TRAITEMENT
+  COMPLETED
+  ANNULEE
+}
+
+model ImportedPart {
+  id            Int       @id @default(autoincrement())
+  import        Import    @relation("ImportParts", fields: [importId], references: [id])
+  importId      Int
+  product       Product?  @relation("ProductDetails", fields: [productId], references: [id])
+  productId     Int?      // Lien vers le produit consolidé
+  
+  // Informations spécifiques à l'import (peuvent varier entre imports)
+  codeArt       String    @map("code_art") // Code fournisseur (variable)
+  marque        String
+  oem           String
+  autoFinal     String    @map("auto_final")
+  lib1          String
+  quantity      Int
+  qttArrive     Int       @map("qtt_arrive")
+  poids         Float
+  purchasePrice Decimal   @map("purchase_price")
+  salePrice     Decimal   @map("sale_price")
+  margin        Decimal
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Index pour les recherches
+  @@index([codeArt])
+  @@index([oem])
+  @@index([productId])
+}
+
+model Stock {
+  id             Int         @id @default(autoincrement())
+  product        Product     @relation("ProductStocks", fields: [productId], references: [id])
+  productId      Int         @unique
+  lib1           String
+  entrepot       Entrepot? @relation(fields: [entrepotId], references: [id])
+  entrepotId     Int?
+  quantite       Float       @default(0)
+  quantiteVendu  Float       @default(0) @map("quantite_vendu")
+  quantiteReserve Float      @default(0) @map("quantite_reserve") // Nouveau champ
+  
+  // Prix et statut
+  prixFinal      Decimal?    @map("prix_final")
+  status         StockStatus @default(DISPONIBLE)
+  
+  // Timestamps
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Index
+  @@index([productId])
+  @@index([status])
+}
+
+model Entrepot {
+  id          Int       @id @default(autoincrement())
+  libelle     String    @unique
+  description String?
+  adresse     String?
+  stocks      Stock[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+enum StockStatus {
+  DISPONIBLE
+  RUPTURE
+  COMMANDE
+  PREORDER
+  RESERVE
+  RETOUR
+  DEFECTUEUX
+}
+
+model Customer {
+  id          Int       @id @default(autoincrement())
+  nom         String    @map("nom")
+  type        CustomerType @default(RETAIL) // Nouveau enum
+  telephone   String
+  siret       String?
+  email       String?   @unique
+  adresse     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  commandes CommandeVente[]
+}
+
+enum CustomerType {
+  RETAIL    // Client détail
+  B2B       // Professionnel
+  WHOLESALE // Grossiste
+}
+
+model CommandeVente {
+  id            Int               @id @default(autoincrement())
+  reference     String            @unique
+  customer      Customer?         @relation(fields: [customerId], references: [id])
+  customerId    Int?
+  manager       User              @relation(fields: [managerId], references: [id])
+  managerId     Int
+  libelle       String?
+  status        CommandeStatus    @default(EN_ATTENTE)
+  totalAmount   Float             @map("total_amount") // Nouveau champ calculé
+  type          OrderType         @default(RETAIL) 
+  // Relations
+  pieces        PiecesCommande[]  @relation("CommandePieces")
+  factures      Facture[]         @relation("CommandeFactures")
+  
+  // Timestamps
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  // Index
+  @@index([reference])
+  @@index([managerId])
+  @@index([customerId])
+  @@index([status])
+}
+
+enum OrderType {
+  RETAIL
+  B2B
+  WHOLESALE
+}
+
+enum CommandeStatus {
+  EN_ATTENTE
+  TRAITEMENT
+  LIVREE
+  ANNULEE
+}
+
+model PiecesCommande {
+  id            Int           @id @default(autoincrement())
+  commande      CommandeVente @relation("CommandePieces", fields: [commandeId], references: [id])
+  commandeId    Int           @map("commande_id")
+  product       Product       @relation(fields: [productId], references: [id])
+  productId     Int           @map("product_id")
+  
+  // Détails de la commande
+  quantite      Int           @default(0)
+  prixArticle   Float         @map("prix_article")
+  remise        Float         @default(0) // Nouveau champ
+  
+  // Timestamps
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Index
+  @@index([commandeId])
+  @@index([productId])
+}
+
+model Facture {
+  id                  Int           @id @default(autoincrement())
+  commandeVente       CommandeVente @relation("CommandeFactures", fields: [commandeId], references: [id])
+  commandeId          Int           @map("commande_id")
+  referenceFacture    String        @unique @map("reference_fact")
+  prixTotal           Float         @map("prix_total")
+  montantPaye         Float         @default(0) @map("montant_paye") // Nouveau champ
+  resteAPayer         Float         @default(0) @map("reste_a_payer") // Nouveau champ
+  status              FactureStatus @default(NON_PAYEE) // Changé en enum
+  createdBy           User          @relation(fields: [userId], references: [id])
+  userId              Int           @map("user_id")
+  
+  // Relations
+    remises           Remise[]
+  paiements           Paiement[]    // Relation ajoutée
+  
+  // Timestamps
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  paidAt              DateTime?     @map("paid_at") // Nouveau champ
+
+  // Index
+  @@index([commandeId])
+  @@index([referenceFacture])
+  @@index([status])
+}
+
+enum FactureStatus {
+  NON_PAYEE
+  PARTIELLEMENT_PAYEE
+  PAYEE
+  ANNULEE
+}
+
+model Remise {
+  id                  Int       @id @default(autoincrement())
+  facture             Facture   @relation(fields: [factureId], references: [id])
+  factureId           Int       @map("facture_id")
+  description         String?
+  taux                Float?
+  montant             Float?
+  type                RemiseType @default(POURCENTAGE) // Nouveau champ
+  
+  // Timestamps
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+enum RemiseType {
+  POURCENTAGE
+  MONTANT_FIXE
+}
+
+model Paiement {
+  id            Int       @id @default(autoincrement())
+  facture       Facture   @relation(fields: [factureId], references: [id])
+  factureId     Int
+  montant       Float
+  mode          String    // ESPECES, VIREMENT, CHEQUE, CARTE
+  reference     String?
+    manager       User              @relation(fields: [managerId], references: [id])
+  managerId     Int
+  createdAt     DateTime  @default(now())
+}
+
+enum ModePaiement {
+  ESPECES
+  VIREMENT
+  CHEQUE
+  CARTE
+  MOBILE_MONEY
+}
+
+model StockMovement {
+  id          Int       @id @default(autoincrement())
+  product     Product   @relation(fields: [productId], references: [id])
+  productId   Int
+  type        MovementType
+  quantity    Float
+  source      String?   // Import ID, Commande ID, etc.
+  reason      String?   // Motif manuel pour ajustements
+  createdAt   DateTime  @default(now())
+  @@index([productId])
+  @@index([type])
+}
+
+enum MovementType {
+  IMPORT
+  SALE
+  RETURN
+  ADJUSTMENT
+  TRANSFER
+  LOSS
+}
+
+model PriceHistory {
+  id          Int       @id @default(autoincrement())
+  product     Product   @relation(fields: [productId], references: [id])
+  productId   Int
+  oldPrice    Decimal
+  newPrice    Decimal
+  changeReason String?
+  changeType  ChangeType
+  createdAt   DateTime  @default(now())
+  @@index([productId])
+}
+
+enum ChangeType {
+  INCREASE
+  DECREASE
+  INITIAL
+}
