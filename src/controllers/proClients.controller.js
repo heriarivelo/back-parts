@@ -275,13 +275,13 @@ exports.updateProClient = async (req, res) => {
       address,
       postalCode,
       city,
-      activity,
-      contactName,
-      contactPosition,
+      // activity,
+      // contactName,
+      // contactPosition,
       phone,
       email,
-      paymentTerms,
-      creditLimit,
+      // paymentTerms,
+      // creditLimit,
     } = req.body;
 
     const updatedClient = await prisma.customer.update({
@@ -289,18 +289,18 @@ exports.updateProClient = async (req, res) => {
       data: {
         nom: name,
         siret,
-        adresse: address,
-        postalCode,
-        city,
+        adresse: address && postalCode,
+        // postalCode,
+        // city,
         telephone: phone,
         email,
-        metadata: {
-          activity,
-          contactName,
-          contactPosition,
-          paymentTerms: parseInt(paymentTerms) || 30,
-          creditLimit: parseFloat(creditLimit) || 0,
-        },
+        // metadata: {
+        //   activity,
+        //   contactName,
+        //   contactPosition,
+        //   paymentTerms: parseInt(paymentTerms) || 30,
+        //   creditLimit: parseFloat(creditLimit) || 0,
+        // },
       },
     });
 

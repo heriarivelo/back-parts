@@ -214,6 +214,11 @@ class OrderService {
     try {
       const commandes = await prisma.commandeVente.findMany({
         orderBy: { createdAt: "desc" },
+        where: {
+          status: {
+            in: ["EN_ATTENTE", "TRAITEMENT"], // Correction ici
+          },
+        },
         include: {
           customer: true,
           manager: true,

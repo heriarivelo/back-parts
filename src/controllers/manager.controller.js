@@ -51,37 +51,98 @@ const prisma = new PrismaClient();
 // };
 
 // Recherche de pièces (avec gestion des codes multiples)
+// const searchParts = async (req, res) => {
+//   const { query, oem, marque } = req.query;
+
+//   console.log(query, "query");
+//   console.log(oem, "oem");
+
+//   const results = await prisma.product.findMany({
+//     where: {
+//       OR: [
+//         { oem: { contains: oem || "" } },
+//         { marque: { contains: marque || "" } },
+//         { referenceCode: { contains: query || "" } },
+//         { importDetails: { some: { codeArt: { contains: query || "" } } } },
+//       ],
+//     },
+//     include: {
+//       stocks: true,
+//       importDetails: {
+//         orderBy: { createdAt: "desc" }, // <-- Correction ici
+//         take: 1,
+//       },
+//     },
+//   });
+
+//   res.json(
+//     results.map((product) => ({
+//       ...product,
+//       currentStock: product.stocks.reduce(
+//         (sum, stock) => sum + stock.quantite,
+//         0
+//       ),
+//       lastPurchasePrice: product.importDetails[0]?.purchasePrice,
+//     }))
+//   );
+// };
+
 const searchParts = async (req, res) => {
   const { query, oem, marque } = req.query;
 
+  // console.log(query, "query");
+  // console.log(oem, "oem");
+  // console.log(marque, "marque");
+
+  const conditions = [];
+
+  // Recherche large sur "query"
+  if (query) {
+    conditions.push(
+      { referenceCode: { contains: query, mode: "insensitive" } },
+      { libelle: { contains: query, mode: "insensitive" } },
+      { autoFinal: { contains: query, mode: "insensitive" } },
+      {
+        importDetails: {
+          some: { codeArt: { contains: query, mode: "insensitive" } },
+        },
+      }
+    );
+  }
+
+  // Recherche spécifique par OEM
+  if (oem) {
+    conditions.push({ oem: { contains: oem, mode: "insensitive" } });
+  }
+
+  // Recherche spécifique par marque
+  if (marque) {
+    conditions.push({ marque: { contains: marque, mode: "insensitive" } });
+  }
+
   const results = await prisma.product.findMany({
     where: {
-      OR: [
-        { oem: { contains: oem || "" } },
-        { marque: { contains: marque || "" } },
-        { referenceCode: { contains: query || "" } },
-        { importDetails: { some: { codeArt: { contains: query || "" } } } },
-      ],
+      OR: conditions,
     },
     include: {
       stocks: true,
       importDetails: {
-        orderBy: { createdAt: "desc" }, // <-- Correction ici
+        orderBy: { createdAt: "desc" },
         take: 1,
       },
     },
   });
 
-  res.json(
-    results.map((product) => ({
-      ...product,
-      currentStock: product.stocks.reduce(
-        (sum, stock) => sum + stock.quantite,
-        0
-      ),
-      lastPurchasePrice: product.importDetails[0]?.purchasePrice,
-    }))
-  );
+  const response = results.map((product) => ({
+    ...product,
+    currentStock: product.stocks.reduce(
+      (sum, stock) => sum + stock.quantite,
+      0
+    ),
+    lastPurchasePrice: product.importDetails[0]?.purchasePrice ?? null,
+  }));
+
+  res.json(response);
 };
 
 // // Création de facture
