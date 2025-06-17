@@ -7,6 +7,8 @@ const {
   getStockAnalytics,
   getAvailableProducts,
   getAllStocks,
+  getProductDistribution,
+  updateStockDistribution,
 } = require("../controllers/stock.controller");
 
 router.get("/", getStockStatus);
@@ -14,5 +16,7 @@ router.get("/", getStockStatus);
 router.get("/list", getAllStocks); // pour le stock admin merci
 router.get("/analytics", getStockAnalytics);
 router.get("/available", getAvailableProducts);
+router.post("/distribution", updateStockDistribution);
+router.get("/products/:productId/distribution", getProductDistribution);
 
 module.exports = router;

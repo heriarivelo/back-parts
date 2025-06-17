@@ -18,6 +18,9 @@ const proClientsRoutes = require("./routes/proClients.routes");
 const stocks = require("./routes/stock.routes");
 const historiqueprix = require("./routes/historiquePrix.routes");
 const dashStat = require("./routes/dashboardStat.routes");
+const reapproRoutes = require("./routes/reappro.routes");
+const fournisseur = require("./routes/fournisseurs.routes");
+const clearDbRoutes = require("./routes/suppression.routes");
 
 const app = express();
 app.use(cors());
@@ -40,6 +43,9 @@ app.use("/api/pro-clients", proClientsRoutes);
 app.use("/api/stocks", stocks);
 app.use("/api/produit", historiqueprix);
 app.use("/api/dashboard", dashStat);
+app.use("/api/reappro", reapproRoutes);
+app.use("/api/suppliers", fournisseur);
+app.use("/api/tools", clearDbRoutes);
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));

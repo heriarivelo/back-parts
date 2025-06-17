@@ -51,6 +51,7 @@ const getAllStocks = async (req, res) => {
         ? {
             OR: [
               { referenceCode: { contains: search, mode: "insensitive" } },
+              { codeArt: { contains: search, mode: "insensitive" } },
               { libelle: { contains: search, mode: "insensitive" } },
               { oem: { contains: search, mode: "insensitive" } },
               { marque: { contains: search, mode: "insensitive" } },
@@ -65,6 +66,7 @@ const getAllStocks = async (req, res) => {
         product: {
           select: {
             id: true,
+            codeArt: true,
             referenceCode: true,
             libelle: true,
             oem: true,
@@ -72,7 +74,7 @@ const getAllStocks = async (req, res) => {
             autoFinal: true,
           },
         },
-        entrepot: true,
+        // entrepot: true,
       },
       skip: (parseInt(page) - 1) * parseInt(limit),
       take: parseInt(limit),
@@ -228,9 +230,218 @@ const getAvailableProducts = async (req, res) => {
 //   res.json({ success: true });
 // };
 
+// zavabaovao
+
+// controllers/stock.controller.ts
+const getProductDistribution = async (req, res) => {
+  const productId = parseInt(req.params.productId);
+
+  try {
+    // 1. Récupérer le produit et ses informations de stock
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        stocks: {
+          include: {
+            entrepots: {
+              include: {
+                entrepot: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: "Produit non trouvé" });
+    }
+
+    // 2. Vérifier s'il y a des stocks pour ce produit
+    if (product.stocks.length === 0) {
+      return res.json({
+        productId,
+        codeArt: product.codeArt,
+        reference: product.referenceCode,
+        libelle: product.libelle,
+        total: 0,
+        assigned: [],
+        unassigned: 0,
+        message: "Aucun stock disponible pour ce produit",
+      });
+    }
+
+    // 3. Calculer les distributions
+    const stock = product.stocks[0]; // Un seul stock par produit dans le nouveau modèle
+
+    // Quantité totale (dans entrepôts + qttsansEntrepot)
+    const total = stock.quantite;
+
+    // Quantité dans les entrepôts
+    const assigned = stock.entrepots.map((e) => ({
+      entrepotId: e.entrepotId,
+      entrepotName: e.entrepot.libelle,
+      quantity: e.quantite,
+      stockEntrepotId: e.id,
+    }));
+
+    // Quantité non assignée (qttsansEntrepot)
+    const unassigned = stock.qttsansEntrepot;
+
+    // Vérification cohérence des totaux
+    const totalAssigned = assigned.reduce((sum, a) => sum + a.quantity, 0);
+    const calculatedTotal = totalAssigned + unassigned;
+
+    res.json({
+      productId,
+      codeArt: product.codeArt,
+      reference: product.referenceCode,
+      libelle: product.libelle,
+      total,
+      totalAssigned,
+      unassigned,
+      assigned,
+      coherencyCheck: {
+        calculatedTotal,
+        matches: calculatedTotal === total,
+        difference: calculatedTotal - total,
+      },
+      stockId: stock.id,
+    });
+  } catch (error) {
+    console.error("Erreur:", error);
+    res.status(500).json({ error: "Erreur serveur", details: error.message });
+  }
+};
+
+const updateStockDistribution = async (req, res) => {
+  const { productId, distributions } = req.body;
+  console.log(req.body);
+
+  try {
+    // 1. Récupérer le stock du produit
+    const stock = await prisma.stock.findFirst({
+      where: { productId },
+      include: { entrepots: true },
+    });
+
+    if (!stock) {
+      return res
+        .status(404)
+        .json({ error: "Stock non trouvé pour ce produit" });
+    }
+
+    // 2. Séparer la quantité sans entrepot et les distributions d'entrepôts
+    const newQttSansEntrepot =
+      distributions.find((d) => d.entrepotId === null)?.quantity || 0;
+    const entrepotDistributions = distributions.filter(
+      (d) => d.entrepotId !== null
+    );
+
+    // 3. Convertir les entrepotId en nombres
+    const entrepotIds = entrepotDistributions.map((d) =>
+      parseInt(d.entrepotId)
+    );
+
+    // 4. Vérifier la cohérence des quantités
+    const totalDistributed = entrepotDistributions.reduce(
+      (sum, d) => sum + d.quantity,
+      0
+    );
+    const newTotal = newQttSansEntrepot + totalDistributed;
+
+    if (newTotal > stock.quantite) {
+      return res.status(400).json({
+        error: `La somme des quantités (${newTotal}) dépasse le stock total (${stock.quantite})`,
+      });
+    }
+
+    // 5. Mettre à jour en transaction
+    await prisma.$transaction(async (prisma) => {
+      // Supprimer seulement les entrepôts qui ne sont pas dans la nouvelle distribution
+      if (entrepotIds.length > 0) {
+        await prisma.stockEntrepot.deleteMany({
+          where: {
+            stockId: stock.id,
+            entrepotId: { notIn: entrepotIds },
+          },
+        });
+      } else {
+        // Si aucun entrepot dans la nouvelle distribution, tout supprimer
+        await prisma.stockEntrepot.deleteMany({
+          where: { stockId: stock.id },
+        });
+      }
+
+      // Mettre à jour ou créer les nouvelles distributions
+      for (const dist of entrepotDistributions) {
+        await prisma.stockEntrepot.upsert({
+          where: {
+            stockId_entrepotId: {
+              stockId: stock.id,
+              entrepotId: parseInt(dist.entrepotId),
+            },
+          },
+          update: { quantite: dist.quantity },
+          create: {
+            stockId: stock.id,
+            entrepotId: parseInt(dist.entrepotId),
+            quantite: dist.quantity,
+          },
+        });
+      }
+
+      // Mettre à jour la quantité sans entrepot
+      await prisma.stock.update({
+        where: { id: stock.id },
+        data: {
+          qttsansEntrepot: newQttSansEntrepot,
+        },
+      });
+    });
+
+    // 6. Retourner les données mises à jour
+    const updatedData = await prisma.stock.findUnique({
+      where: { id: stock.id },
+      include: {
+        entrepots: {
+          include: { entrepot: true },
+        },
+        product: {
+          select: {
+            referenceCode: true,
+            libelle: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      productId,
+      stockId: stock.id,
+      total: stock.quantite,
+      qttsansEntrepot: updatedData.qttsansEntrepot,
+      distributions: updatedData.entrepots.map((e) => ({
+        entrepotId: e.entrepotId,
+        entrepotName: e.entrepot.libelle,
+        quantity: e.quantite,
+      })),
+    });
+  } catch (error) {
+    console.error("Erreur:", error);
+    res.status(500).json({
+      error: "Erreur serveur",
+      details: error.message,
+    });
+  }
+};
+
 module.exports = {
   getStockStatus, //liste stock pour le manager pour l'instant
   getStockAnalytics,
   getAllStocks,
   getAvailableProducts,
+  getProductDistribution,
+  updateStockDistribution,
 };

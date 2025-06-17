@@ -79,6 +79,15 @@ const getDashboardStats = async (req, res) => {
       );
     };
 
+    // 3. Commandes en cours
+    const pendingOrders = await prisma.commandeVente.count({
+      where: {
+        status: {
+          in: ["EN_ATTENTE", "TRAITEMENT"],
+        },
+      },
+    });
+
     res.json(
       serializeBigInt({
         totalSales: totalSales._sum.prixTotal || 0,
@@ -93,6 +102,7 @@ const getDashboardStats = async (req, res) => {
         })),
         revenueTrend,
         customerGrowth,
+        pendingOrders,
       })
     );
   } catch (error) {

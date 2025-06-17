@@ -21,8 +21,8 @@ model User {
 
   // Relations
   commandes CommandeVente[] // Commandes créées par cet utilisateur
-  factures  Facture[]       // Factures générées par cet utilisateur
-  paiements Paiement[] 
+  factures  Facture[] // Factures générées par cet utilisateur
+  paiements Paiement[]
 }
 
 enum Role {
@@ -32,25 +32,26 @@ enum Role {
 }
 
 model Product {
-  id             Int               @id @default(autoincrement())
-  referenceCode  String            @unique @map("reference_code") // Code interne unique et stable
-  codeArt        String?           @unique @map("code_art") // Ancien champ conservé pour compatibilité
-  oem            String?           // Référence constructeur (le plus important pour le matching)
-  marque         String?           // Marque de la pièce
-  libelle        String?           // Libellé complet
-  category       String?           // Catégorie de la pièce
-  autoFinal      String?           @map("auto_final")// Véhicules compatibles
-  
+  id            Int     @id @default(autoincrement())
+  referenceCode String  @unique @map("reference_code") // Code interne unique et stable
+  codeArt       String? @unique @map("code_art") // Ancien champ conservé pour compatibilité
+  oem           String? // Référence constructeur (le plus important pour le matching)
+  marque        String? // Marque de la pièce
+  libelle       String? // Libellé complet
+  category      String? // Catégorie de la pièce
+  autoFinal     String? @map("auto_final") // Véhicules compatibles
+
   // Relations
-  stocks         Stock[]           @relation("ProductStocks")
-  importDetails  ImportedPart[]    @relation("ProductDetails")
+  stocks         Stock[]          @relation("ProductStocks")
+  importDetails  ImportedPart[]   @relation("ProductDetails")
   stockMovements StockMovement[] // 👈 Add this
-  priceHistories PriceHistory[]  //
+  priceHistories PriceHistory[] //
   commandes      PiecesCommande[]
-  
+  reapproItems   ReapproItem[]    @relation("ProductReapproItems")
+
   // Timestamps
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Index pour les recherches fréquentes
   @@index([oem])
@@ -59,21 +60,21 @@ model Product {
 }
 
 model Import {
-  id            Int             @id @default(autoincrement())
-  reference     String
-  description   String
-  tauxDeChange  Decimal         @map("taux_de_change")
-  fretAvecDD    Decimal         @map("fret_avec_dd")
-  fretSansDD    Decimal         @map("fret_sans_dd")
-  douane        Decimal
-  tva           Decimal
-  marge         Decimal
-  importedAt    DateTime        @default(now())
-  fileName      String
-  status        ImportStatus    @default(COMPLETED)
-  
+  id           Int          @id @default(autoincrement())
+  reference    String
+  description  String
+  tauxDeChange Decimal      @map("taux_de_change")
+  fretAvecDD   Decimal      @map("fret_avec_dd")
+  fretSansDD   Decimal      @map("fret_sans_dd")
+  douane       Decimal
+  tva          Decimal
+  marge        Decimal
+  importedAt   DateTime     @default(now())
+  fileName     String
+  status       ImportStatus @default(EN_ATTENTE)
+
   // Relations
-  parts         ImportedPart[]  @relation("ImportParts")
+  parts ImportedPart[] @relation("ImportParts")
 }
 
 enum ImportStatus {
@@ -84,28 +85,28 @@ enum ImportStatus {
 }
 
 model ImportedPart {
-  id            Int       @id @default(autoincrement())
-  import        Import    @relation("ImportParts", fields: [importId], references: [id])
-  importId      Int
-  product       Product?  @relation("ProductDetails", fields: [productId], references: [id])
-  productId     Int?      // Lien vers le produit consolidé
-  
+  id        Int      @id @default(autoincrement())
+  import    Import   @relation("ImportParts", fields: [importId], references: [id])
+  importId  Int
+  product   Product? @relation("ProductDetails", fields: [productId], references: [id])
+  productId Int? // Lien vers le produit consolidé
+
   // Informations spécifiques à l'import (peuvent varier entre imports)
-  codeArt       String    @map("code_art") // Code fournisseur (variable)
+  codeArt       String  @map("code_art") // Code fournisseur (variable)
   marque        String
   oem           String
-  autoFinal     String    @map("auto_final")
+  autoFinal     String  @map("auto_final")
   lib1          String
   quantity      Int
-  qttArrive     Int       @map("qtt_arrive")
+  qttArrive     Int     @map("qtt_arrive")
   poids         Float
-  purchasePrice Decimal   @map("purchase_price")
-  salePrice     Decimal   @map("sale_price")
+  purchasePrice Decimal @map("purchase_price")
+  salePrice     Decimal @map("sale_price")
   margin        Decimal
-  
+
   // Timestamps
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Index pour les recherches
   @@index([codeArt])
@@ -114,37 +115,50 @@ model ImportedPart {
 }
 
 model Stock {
-  id             Int         @id @default(autoincrement())
-  product        Product     @relation("ProductStocks", fields: [productId], references: [id])
-  productId      Int         @unique
-  lib1           String
-  entrepot       Entrepot? @relation(fields: [entrepotId], references: [id])
-  entrepotId     Int?
-  quantite       Float       @default(0)
-  quantiteVendu  Float       @default(0) @map("quantite_vendu")
-  quantiteReserve Float      @default(0) @map("quantite_reserve") // Nouveau champ
-  
+  id              Int     @id @default(autoincrement())
+  product         Product @relation("ProductStocks", fields: [productId], references: [id])
+  productId       Int
+  lib1            String
+  quantite        Float   @default(0)
+  quantiteVendu   Float   @default(0) @map("quantite_vendu")
+  quantiteReserve Float   @default(0) @map("quantite_reserve") // Nouveau champ
+  qttsansEntrepot Float   @default(0) @map("qttsans_entrepot")
+
   // Prix et statut
-  prixFinal      Decimal?    @map("prix_final")
-  status         StockStatus @default(DISPONIBLE)
-  
+  prixFinal Decimal?    @map("prix_final")
+  status    StockStatus @default(DISPONIBLE)
+
   // Timestamps
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  entrepots StockEntrepot[]
 
   // Index
   @@index([productId])
   @@index([status])
 }
 
+model StockEntrepot {
+  id         Int      @id @default(autoincrement())
+  stockId    Int
+  stock      Stock    @relation(fields: [stockId], references: [id])
+  entrepotId Int
+  entrepot   Entrepot @relation(fields: [entrepotId], references: [id])
+  quantite   Float    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([stockId, entrepotId]) // Un couple stock-entrepot unique
+}
+
 model Entrepot {
-  id          Int       @id @default(autoincrement())
-  libelle     String    @unique
-  description String?
-  adresse     String?
-  stocks      Stock[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             Int             @id @default(autoincrement())
+  libelle        String          @unique
+  description    String?
+  adresse        String?
+  stockEntrepots StockEntrepot[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 }
 
 enum StockStatus {
@@ -158,44 +172,44 @@ enum StockStatus {
 }
 
 model Customer {
-  id          Int       @id @default(autoincrement())
-  nom         String    @map("nom")
-  type        CustomerType @default(RETAIL) // Nouveau enum
-  telephone   String
-  siret       String?
-  email       String?   @unique
-  adresse     String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        Int          @id @default(autoincrement())
+  nom       String       @map("nom")
+  type      CustomerType @default(RETAIL) // Nouveau enum
+  telephone String
+  siret     String?
+  email     String?      @unique
+  adresse   String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
 
   // Relations
   commandes CommandeVente[]
 }
 
 enum CustomerType {
-  RETAIL    // Client détail
-  B2B       // Professionnel
+  RETAIL // Client détail
+  B2B // Professionnel
   WHOLESALE // Grossiste
 }
 
 model CommandeVente {
-  id            Int               @id @default(autoincrement())
-  reference     String            @unique
-  customer      Customer?         @relation(fields: [customerId], references: [id])
-  customerId    Int?
-  manager       User              @relation(fields: [managerId], references: [id])
-  managerId     Int
-  libelle       String?
-  status        CommandeStatus    @default(EN_ATTENTE)
-  totalAmount   Float             @map("total_amount") // Nouveau champ calculé
-  type          OrderType         @default(RETAIL) 
+  id          Int              @id @default(autoincrement())
+  reference   String           @unique
+  customer    Customer?        @relation(fields: [customerId], references: [id])
+  customerId  Int?
+  manager     User             @relation(fields: [managerId], references: [id])
+  managerId   Int
+  libelle     String?
+  status      CommandeStatus   @default(EN_ATTENTE)
+  totalAmount Float            @map("total_amount") // Nouveau champ calculé
+  type        OrderType        @default(RETAIL)
   // Relations
-  pieces        PiecesCommande[]  @relation("CommandePieces")
-  factures      Facture[]         @relation("CommandeFactures")
-  
+  pieces      PiecesCommande[] @relation("CommandePieces")
+  factures    Facture[]        @relation("CommandeFactures")
+
   // Timestamps
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Index
   @@index([reference])
@@ -218,20 +232,20 @@ enum CommandeStatus {
 }
 
 model PiecesCommande {
-  id            Int           @id @default(autoincrement())
-  commande      CommandeVente @relation("CommandePieces", fields: [commandeId], references: [id])
-  commandeId    Int           @map("commande_id")
-  product       Product       @relation(fields: [productId], references: [id])
-  productId     Int           @map("product_id")
-  
+  id         Int           @id @default(autoincrement())
+  commande   CommandeVente @relation("CommandePieces", fields: [commandeId], references: [id])
+  commandeId Int           @map("commande_id")
+  product    Product       @relation(fields: [productId], references: [id])
+  productId  Int           @map("product_id")
+
   // Détails de la commande
-  quantite      Int           @default(0)
-  prixArticle   Float         @map("prix_article")
-  remise        Float         @default(0) // Nouveau champ
-  
+  quantite    Int   @default(0)
+  prixArticle Float @map("prix_article")
+  remise      Float @default(0) // Nouveau champ
+
   // Timestamps
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Index
   @@index([commandeId])
@@ -239,25 +253,25 @@ model PiecesCommande {
 }
 
 model Facture {
-  id                  Int           @id @default(autoincrement())
-  commandeVente       CommandeVente @relation("CommandeFactures", fields: [commandeId], references: [id])
-  commandeId          Int           @map("commande_id")
-  referenceFacture    String        @unique @map("reference_fact")
-  prixTotal           Float         @map("prix_total")
-  montantPaye         Float         @default(0) @map("montant_paye") // Nouveau champ
-  resteAPayer         Float         @default(0) @map("reste_a_payer") // Nouveau champ
-  status              FactureStatus @default(NON_PAYEE) // Changé en enum
-  createdBy           User          @relation(fields: [userId], references: [id])
-  userId              Int           @map("user_id")
-  
+  id               Int           @id @default(autoincrement())
+  commandeVente    CommandeVente @relation("CommandeFactures", fields: [commandeId], references: [id])
+  commandeId       Int           @map("commande_id")
+  referenceFacture String        @unique @map("reference_fact")
+  prixTotal        Float         @map("prix_total")
+  montantPaye      Float         @default(0) @map("montant_paye") // Nouveau champ
+  resteAPayer      Float         @default(0) @map("reste_a_payer") // Nouveau champ
+  status           FactureStatus @default(NON_PAYEE) // Changé en enum
+  createdBy        User          @relation(fields: [userId], references: [id])
+  userId           Int           @map("user_id")
+
   // Relations
-    remises           Remise[]
-  paiements           Paiement[]    // Relation ajoutée
-  
+  remises   Remise[]
+  paiements Paiement[] // Relation ajoutée
+
   // Timestamps
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  paidAt              DateTime?     @map("paid_at") // Nouveau champ
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  paidAt    DateTime? @map("paid_at") // Nouveau champ
 
   // Index
   @@index([commandeId])
@@ -273,17 +287,17 @@ enum FactureStatus {
 }
 
 model Remise {
-  id                  Int       @id @default(autoincrement())
-  facture             Facture   @relation(fields: [factureId], references: [id])
-  factureId           Int       @map("facture_id")
-  description         String?
-  taux                Float?
-  montant             Float?
-  type                RemiseType @default(POURCENTAGE) // Nouveau champ
-  
+  id          Int        @id @default(autoincrement())
+  facture     Facture    @relation(fields: [factureId], references: [id])
+  factureId   Int        @map("facture_id")
+  description String?
+  taux        Float?
+  montant     Float?
+  type        RemiseType @default(POURCENTAGE) // Nouveau champ
+
   // Timestamps
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum RemiseType {
@@ -292,15 +306,15 @@ enum RemiseType {
 }
 
 model Paiement {
-  id            Int       @id @default(autoincrement())
-  facture       Facture   @relation(fields: [factureId], references: [id])
-  factureId     Int
-  montant       Float
-  mode          String    // ESPECES, VIREMENT, CHEQUE, CARTE
-  reference     String?
-    manager       User              @relation(fields: [managerId], references: [id])
-  managerId     Int
-  createdAt     DateTime  @default(now())
+  id        Int      @id @default(autoincrement())
+  facture   Facture  @relation(fields: [factureId], references: [id])
+  factureId Int
+  montant   Float
+  mode      String // ESPECES, VIREMENT, CHEQUE, CARTE
+  reference String?
+  manager   User     @relation(fields: [managerId], references: [id])
+  managerId Int
+  createdAt DateTime @default(now())
 }
 
 enum ModePaiement {
@@ -312,20 +326,22 @@ enum ModePaiement {
 }
 
 model StockMovement {
-  id          Int       @id @default(autoincrement())
-  product     Product   @relation(fields: [productId], references: [id])
-  productId   Int
-  type        MovementType
-  quantity    Float
-  source      String?   // Import ID, Commande ID, etc.
-  reason      String?   // Motif manuel pour ajustements
-  createdAt   DateTime  @default(now())
+  id        Int          @id @default(autoincrement())
+  product   Product      @relation(fields: [productId], references: [id])
+  productId Int
+  type      MovementType
+  quantity  Float
+  source    String? // Import ID, Commande ID, etc.
+  reason    String? // Motif manuel pour ajustements
+  createdAt DateTime     @default(now())
+
   @@index([productId])
   @@index([type])
 }
 
 enum MovementType {
   IMPORT
+  COMMANDE
   SALE
   RETURN
   ADJUSTMENT
@@ -334,14 +350,15 @@ enum MovementType {
 }
 
 model PriceHistory {
-  id          Int       @id @default(autoincrement())
-  product     Product   @relation(fields: [productId], references: [id])
-  productId   Int
-  oldPrice    Decimal
-  newPrice    Decimal
+  id           Int        @id @default(autoincrement())
+  product      Product    @relation(fields: [productId], references: [id])
+  productId    Int
+  oldPrice     Decimal
+  newPrice     Decimal
   changeReason String?
-  changeType  ChangeType
-  createdAt   DateTime  @default(now())
+  changeType   ChangeType
+  createdAt    DateTime   @default(now())
+
   @@index([productId])
 }
 
@@ -349,4 +366,55 @@ enum ChangeType {
   INCREASE
   DECREASE
   INITIAL
+}
+
+model Supplier {
+  id        Int                   @id @default(autoincrement())
+  name      String                @unique
+  address   String?
+  country   String?
+  phone     String?
+  email     String?
+  logo      String? // URL du logo
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  reappros  Reapprovisionnement[]
+}
+
+model Reapprovisionnement {
+  id          Int           @id @default(autoincrement())
+  reference   String        @unique
+  status      ReapproStatus @default(DRAFT)
+  items       ReapproItem[]
+  supplier    Supplier?     @relation(fields: [supplierId], references: [id])
+  supplierId  Int?
+  totalAmount Float         @default(0)
+  userId      Int
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([supplierId])
+  @@index([status])
+}
+
+model ReapproItem {
+  id        Int                 @id @default(autoincrement())
+  reappro   Reapprovisionnement @relation(fields: [reapproId], references: [id])
+  reapproId Int
+  product   Product             @relation("ProductReapproItems", fields: [productId], references: [id])
+  productId Int
+  quantity  Int
+  unitPrice Float               @map("unit_price")
+  weightKg  Float?              @default(0) @map("weight_kg")
+  notes     String?
+
+  @@index([reapproId])
+  @@index([productId])
+}
+
+enum ReapproStatus {
+  DRAFT
+  SHIPPED
+  DELIVERED
+  CANCELLED
 }
