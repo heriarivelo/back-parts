@@ -24,131 +24,179 @@ exports.getAllEntrepots = async (req, res) => {
   }
 };
 
-// Obtenir un entrepôt par ID
-// exports.getEntrepotById = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const entrepot = await prisma.entrepot.findUnique({
-//       where: { id: parseInt(id) },
-//     });
-//     if (!entrepot)
-//       return res.status(404).json({ message: "Entrepôt non trouvé" });
-//     res.status(200).json(entrepot);
-//   } catch (error) {
-//     res.status(500).json({ error: error.message });
-//   }
-// };
-
 // Supprimer un entrepôt
 exports.deleteEntrepot = async (req, res) => {
   try {
     const { id } = req.params;
+    const entrepotId = parseInt(id);
 
-    await prisma.$transaction([
-      // Réinitialiser les stocks associés
-      prisma.stock.updateMany({
-        where: { entrepotId: parseInt(id) },
-        data: { entrepotId: null },
-      }),
-      // Supprimer l'entrepôt
-      prisma.entrepot.delete({
-        where: { id: parseInt(id) },
-      }),
-    ]);
+    await prisma.$transaction(async (prisma) => {
+      // 1. Récupérer tous les StockEntrepot associés à cet entrepôt
+      const stockEntrepots = await prisma.stockEntrepot.findMany({
+        where: { entrepotId },
+        include: { stock: true },
+      });
+
+      // 2. Pour chaque association, réintégrer la quantité dans qttsansEntrepot
+      for (const se of stockEntrepots) {
+        await prisma.stock.update({
+          where: { id: se.stockId },
+          data: {
+            qttsansEntrepot: {
+              increment: se.quantite,
+            },
+          },
+        });
+      }
+
+      // 3. Supprimer toutes les entrées StockEntrepot pour cet entrepôt
+      await prisma.stockEntrepot.deleteMany({
+        where: { entrepotId },
+      });
+
+      // 4. Supprimer l'entrepôt lui-même
+      await prisma.entrepot.delete({
+        where: { id: entrepotId },
+      });
+    });
 
     res.status(200).json({ message: "Entrepôt supprimé avec succès" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Erreur lors de la suppression de l'entrepôt:", error);
+    res.status(500).json({
+      error: "Erreur serveur",
+      details: error.message,
+    });
   }
 };
 
 // Obtenir les stocks d'un entrepôt
+// Obtenir les stocks d'un entrepôt
 exports.getStocksEntreposes = async (req, res) => {
   try {
     const { entrepotId } = req.query;
-    const stocks = await prisma.stock.findMany({
+
+    if (!entrepotId) {
+      return res.status(400).json({ error: "L'ID de l'entrepôt est requis" });
+    }
+
+    const stocks = await prisma.stockEntrepot.findMany({
       where: {
-        entrepotId: entrepotId ? parseInt(entrepotId) : null,
+        entrepotId: parseInt(entrepotId),
+        quantite: { gt: 0 }, // Seulement les stocks avec quantité positive
+      },
+      include: {
+        stock: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                oem: true,
+                marque: true,
+                referenceCode: true,
+              },
+            },
+          },
+        },
+        entrepot: {
+          select: {
+            libelle: true,
+          },
+        },
+      },
+      orderBy: {
+        stock: {
+          product: {
+            referenceCode: "asc", // Tri par référence produit
+          },
+        },
       },
     });
-    res.status(200).json(stocks);
+
+    // Formatage des résultats
+    const result = stocks.map((item) => ({
+      id: item.stock.id,
+      stockEntrepotId: item.id,
+      quantite: item.quantite,
+      oem: item.stock.product.oem,
+      marque: item.stock.product.marque,
+      referenceCode: item.stock.product.referenceCode,
+      lib1: item.stock.lib1,
+      prixFinal: item.stock.prixFinal,
+      entrepot: item.entrepot.libelle,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+    }));
+
+    res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
 // Rechercher par code article
-// exports.findByCode_article = async (req, res) => {
-//   try {
-//     const { code_art } = req.query;
-//     const stocks = await prisma.stock.findMany({
-//       where: {
-//         code_art: {
-//           contains: code_art || "",
-//           mode: "insensitive",
-//         },
-//       },
-//     });
-//     res.status(200).json(stocks);
-//   } catch (error) {
-//     res.status(500).json({ error: error.message });
-//   }
-// };
-
 exports.findByCode_article = async (req, res) => {
   try {
-    const { oem, marque, referenceCode } = req.query;
+    const { searchQuery } = req.query;
 
+    // Construction de la clause where
     const whereClause = {
-      product: {
-        AND: [
-          oem ? { oem: { contains: oem, mode: "insensitive" } } : {},
-          marque ? { marque: { contains: marque, mode: "insensitive" } } : {},
-          referenceCode
-            ? {
-                referenceCode: { contains: referenceCode, mode: "insensitive" },
-              }
-            : {},
-        ],
+      qttsansEntrepot: {
+        gt: 0,
       },
     };
+
+    if (searchQuery) {
+      whereClause.product = {
+        OR: [
+          { referenceCode: { contains: searchQuery, mode: "insensitive" } },
+          { oem: { contains: searchQuery, mode: "insensitive" } },
+          { marque: { contains: searchQuery, mode: "insensitive" } },
+          { libelle: { contains: searchQuery, mode: "insensitive" } },
+          { autoFinal: { contains: searchQuery, mode: "insensitive" } },
+        ],
+      };
+    }
 
     const stocks = await prisma.stock.findMany({
       where: whereClause,
       include: {
         product: {
           select: {
+            id: true,
+            referenceCode: true,
             oem: true,
             marque: true,
-            referenceCode: true,
+            libelle: true,
+            category: true,
+            autoFinal: true,
           },
+        },
+      },
+      orderBy: {
+        product: {
+          referenceCode: "asc",
         },
       },
     });
 
-    res.status(200).json(stocks);
+    // Formatage des résultats
+    const result = stocks.map((stock) => ({
+      id: stock.id,
+      quantite: stock.qttsansEntrepot,
+      product: stock.product,
+      prixFinal: stock.prixFinal,
+    }));
+
+    res.status(200).json(result);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Erreur recherche multicritère:", error);
+    res.status(500).json({
+      error: "Erreur serveur",
+      details: error.message,
+    });
   }
 };
-
-// Mettre à jour l'entrepôt d'un stock
-// exports.updateEntrepotStock = async (req, res) => {
-//   try {
-//     const { stockId, entrepotId } = req.body;
-
-//     const stock = await prisma.stock.update({
-//       where: { id: parseInt(stockId) },
-//       data: {
-//         entrepotId: entrepotId ? parseInt(entrepotId) : null,
-//       },
-//     });
-
-//     res.status(200).json({ message: "Entrepôt mis à jour avec succès", stock });
-//   } catch (error) {
-//     res.status(500).json({ error: error.message });
-//   }
-// };
 
 exports.updateEntrepotStock = async (req, res) => {
   try {
@@ -183,55 +231,26 @@ exports.updateEntrepotStock = async (req, res) => {
   }
 };
 
-// Mettre à jour plusieurs stocks
-// exports.updateEntrepotStockListe = async (req, res) => {
-//   try {
-//     const { stocks } = req.body;
-//     const notFoundProducts = [];
-
-//     for (const item of stocks) {
-//       // Trouver le produit par ses identifiants stables
-//       const product = await prisma.product.findFirst({
-//         where: {
-//           oem: item.oem,
-//           marque: item.marque,
-//           referenceCode: item.referenceCode,
-//         },
-//       });
-
-//       if (!product) {
-//         notFoundProducts.push(item);
-//         continue;
-//       }
-
-//       // Mise à jour via l'ID produit
-//       await prisma.stock.updateMany({
-//         where: {
-//           productId: product.id,
-//           lib1: item.lib1,
-//           prixFinal: item.prix_final,
-//         },
-//         data: {
-//           entrepotId: item.entrepotId ? parseInt(item.entrepotId) : null,
-//         },
-//       });
-//     }
-
-//     res.status(200).json({
-//       message: "Mise à jour terminée",
-//       notFoundProducts,
-//     });
-//   } catch (error) {
-//     res.status(500).json({ error: error.message });
-//   }
-// };
-
 exports.getArticleNoEntrepots = async (req, res) => {
   try {
     const stocks = await prisma.stock.findMany({
       where: {
-        entrepotId: null,
-        quantite: { gt: 0 },
+        OR: [
+          // Cas 1: Stock sans aucun entrepôt
+          {
+            entrepots: {
+              none: {},
+            },
+            quantite: { gt: 0 }, // Quantité totale > 0
+          },
+          // Cas 2: Stock avec entrepôts mais avec qttsansEntrepot > 0
+          {
+            entrepots: {
+              some: {}, // Au moins un entrepôt
+            },
+            qttsansEntrepot: { gt: 0 }, // Quantité sans entrepôt > 0
+          },
+        ],
       },
       include: {
         product: {
@@ -239,6 +258,18 @@ exports.getArticleNoEntrepots = async (req, res) => {
             oem: true,
             marque: true,
             referenceCode: true,
+            codeArt: true,
+          },
+        },
+        // Optionnel: pour vérification
+        entrepots: {
+          select: {
+            quantite: true,
+            entrepot: {
+              select: {
+                libelle: true,
+              },
+            },
           },
         },
       },
@@ -246,12 +277,24 @@ exports.getArticleNoEntrepots = async (req, res) => {
 
     const result = stocks.map((stock) => ({
       id: stock.id,
+      productId: stock.productId,
+      codeArt: stock.product.codeArt,
       oem: stock.product.oem,
       marque: stock.product.marque,
       referenceCode: stock.product.referenceCode,
       lib1: stock.lib1,
       quantite: stock.quantite,
+      qttsansEntrepot: stock.qttsansEntrepot,
       prixFinal: stock.prixFinal,
+      // Pour info (peut être enlevé)
+      entrepots: stock.entrepots.map((e) => ({
+        entrepot: e.entrepot.libelle,
+        quantite: e.quantite,
+      })),
+      type:
+        stock.entrepots.length === 0
+          ? "Sans entrepot"
+          : "Avec entrepot mais stock externe",
     }));
 
     res.status(200).json(result);
@@ -260,35 +303,262 @@ exports.getArticleNoEntrepots = async (req, res) => {
   }
 };
 
-// exports.getArticleEntrepots = async (req, res) => {
-//   try {
-//     const stocks = await prisma.stock.findMany({
-//       where: {
-//         quantite: { gt: 0 },
-//       },
-//       include: {
-//         product: {
-//           select: {
-//             oem: true,
-//             marque: true,
-//             referenceCode: true,
-//           },
-//         },
-//         entrepot: true,
-//       },
-//     });
+// src/controllers/stock.controller.ts
+// import { Request, Response } from 'express';
+// import prisma from '../prisma';
 
-//     const result = stocks.map((stock) => ({
-//       oem: stock.product.oem,
-//       marque: stock.product.marque,
-//       referenceCode: stock.product.referenceCode,
-//       lib1: stock.lib1,
-//       prixFinal: stock.prixFinal,
-//       entrepot: stock.entrepot?.libelle || "Non assigné",
-//     }));
+exports.updateStockEntrepot = async (req, res) => {
+  const { stockId } = req.params;
+  const { entrepotId, quantity } = req.body;
 
-//     res.status(200).json(result);
-//   } catch (error) {
-//     res.status(500).json({ error: error.message });
-//   }
-// };
+  try {
+    // 1. Vérifier que le stock existe
+    const existingStock = await prisma.stock.findUnique({
+      where: { id: Number(stockId) },
+    });
+
+    if (!existingStock) {
+      return res.status(404).json({ error: "Stock non trouvé" });
+    }
+
+    // 2. Vérifier que la quantité est valide
+    if (quantity <= 0 || quantity > existingStock.quantite) {
+      return res.status(400).json({
+        error: "Quantité invalide",
+        maxQuantity: existingStock.quantite,
+      });
+    }
+
+    // 3. Vérifier que l'entrepôt existe
+    const entrepotExists = await prisma.entrepot.findUnique({
+      where: { id: entrepotId },
+    });
+
+    if (!entrepotExists) {
+      return res.status(404).json({ error: "Entrepôt non trouvé" });
+    }
+
+    // 4. Logique de mise à jour
+    let updatedStock;
+
+    await prisma.$transaction(async (tx) => {
+      // Cas 1: Le stock existe déjà dans l'entrepôt cible
+      const targetStock = await tx.stock.findFirst({
+        where: {
+          productId: existingStock.productId,
+          entrepotId: entrepotId,
+        },
+      });
+
+      if (targetStock) {
+        // Mettre à jour le stock existant
+        updatedStock = await tx.stock.update({
+          where: { id: targetStock.id },
+          data: {
+            quantite: targetStock.quantite + quantity,
+            status: "DISPONIBLE",
+          },
+        });
+      } else {
+        // Cas 2: Créer un nouveau stock dans l'entrepôt cible
+        updatedStock = await tx.stock.create({
+          data: {
+            productId: existingStock.productId,
+            entrepotId: entrepotId,
+            quantite: quantity,
+            lib1: existingStock.lib1,
+            prixFinal: existingStock.prixFinal,
+            status: "DISPONIBLE",
+          },
+        });
+      }
+
+      // 5. Mettre à jour le stock source
+      await tx.stock.update({
+        where: { id: existingStock.id },
+        data: {
+          quantite: existingStock.quantite - quantity,
+          status:
+            existingStock.quantite - quantity <= 0 ? "RUPTURE" : "DISPONIBLE",
+        },
+      });
+
+      // 6. Enregistrer le mouvement de stock
+      await tx.stockMovement.create({
+        data: {
+          productId: existingStock.productId,
+          type: "TRANSFER",
+          quantity: quantity,
+          source: `Transfert depuis stock ${existingStock.id} vers entrepôt ${entrepotId}`,
+          reason: "Transfert manuel",
+        },
+      });
+    });
+
+    res.json(updatedStock);
+  } catch (error) {
+    console.error("Erreur transfert stock:", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+};
+
+exports.transferStock = async (req, res) => {
+  const { stockId, fromEntrepotId, toEntrepotId, quantity } = req.body;
+
+  try {
+    // Validation des données
+    if (
+      !stockId ||
+      !fromEntrepotId ||
+      !toEntrepotId ||
+      !quantity ||
+      quantity <= 0
+    ) {
+      return res.status(400).json({ error: "Paramètres invalides" });
+    }
+
+    // const transferResult = await prisma.$transaction(async (prisma) => {
+    //   // 1. Vérifier que le stock source existe et a suffisamment de quantité
+    //   const sourceStock = await prisma.stockEntrepot.findUnique({
+    //     where: {
+    //       stockId_entrepotId: {
+    //         stockId: parseInt(stockId),
+    //         entrepotId: parseInt(fromEntrepotId),
+    //       },
+    //     },
+    //   });
+
+    //   if (!sourceStock || sourceStock.quantite < quantity) {
+    //     throw new Error("Stock source insuffisant ou introuvable");
+    //   }
+
+    //   // 2. Diminuer le stock source
+    //   await prisma.stockEntrepot.update({
+    //     where: {
+    //       stockId_entrepotId: {
+    //         stockId: parseInt(stockId),
+    //         entrepotId: parseInt(fromEntrepotId),
+    //       },
+    //     },
+    //     data: {
+    //       quantite: {
+    //         decrement: parseFloat(quantity),
+    //       },
+    //     },
+    //   });
+
+    //   // 3. Augmenter le stock destination (ou créer si n'existe pas)
+    //   await prisma.stockEntrepot.upsert({
+    //     where: {
+    //       stockId_entrepotId: {
+    //         stockId: parseInt(stockId),
+    //         entrepotId: parseInt(toEntrepotId),
+    //       },
+    //     },
+    //     update: {
+    //       quantite: {
+    //         increment: parseFloat(quantity),
+    //       },
+    //     },
+    //     create: {
+    //       stockId: parseInt(stockId),
+    //       entrepotId: parseInt(toEntrepotId),
+    //       quantite: parseFloat(quantity),
+    //     },
+    //   });
+
+    //   // 4. Retourner les nouvelles valeurs
+    //   const updatedSource = await prisma.stockEntrepot.findUnique({
+    //     where: {
+    //       stockId_entrepotId: {
+    //         stockId: parseInt(stockId),
+    //         entrepotId: parseInt(fromEntrepotId),
+    //       },
+    //     },
+    //   });
+
+    //   const updatedDest = await prisma.stockEntrepot.findUnique({
+    //     where: {
+    //       stockId_entrepotId: {
+    //         stockId: parseInt(stockId),
+    //         entrepotId: parseInt(toEntrepotId),
+    //       },
+    //     },
+    //   });
+
+    //   return {
+    //     source: updatedSource,
+    //     destination: updatedDest,
+    //   };
+    // });
+
+    const transferResult = await prisma.$transaction(async (tx) => {
+      // 1. Vérifier la disponibilité dans l'entrepôt source
+      const sourceStock = await tx.stockEntrepot.findUnique({
+        where: {
+          stockId_entrepotId: {
+            stockId: stockId,
+            entrepotId: parseInt(fromEntrepotId),
+          },
+        },
+      });
+
+      if (!sourceStock || sourceStock.quantite < quantity) {
+        throw new Error("Stock insuffisant dans l'entrepôt source");
+      }
+
+      // 2. Retirer du stock source
+      await tx.stockEntrepot.update({
+        where: {
+          stockId_entrepotId: {
+            stockId: stockId,
+            entrepotId: parseInt(fromEntrepotId),
+          },
+        },
+        data: { quantite: { decrement: quantity } },
+      });
+
+      // 3. Ajouter au stock destination
+      await tx.stockEntrepot.upsert({
+        where: {
+          stockId_entrepotId: {
+            stockId: stockId,
+            entrepotId: parseInt(toEntrepotId),
+          },
+        },
+        update: { quantite: { increment: quantity } },
+        create: {
+          stockId: stockId,
+          entrepotId: parseInt(toEntrepotId),
+          quantite: quantity,
+        },
+      });
+
+      // 4. Enregistrer le mouvement
+      // await tx.stockMovement.create({
+      //   data: {
+      //     stockId,
+      //     fromEntrepotId,
+      //     toEntrepotId,
+      //     type: "TRANSFER",
+      //     quantity:quantity,
+      //     raeson: `TRF-${Date.now().toString(36).toUpperCase()}`,
+      //   },
+      // });
+
+      return { success: true, message: "Transfert effectué avec succès" };
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Transfert effectué avec succès",
+      data: transferResult,
+    });
+  } catch (error) {
+    console.error("Erreur lors du transfert:", error);
+    res.status(500).json({
+      error: "Erreur lors du transfert",
+      details: error.message,
+    });
+  }
+};

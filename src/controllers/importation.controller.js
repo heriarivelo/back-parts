@@ -1,172 +1,106 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
-import { parse } from 'csv-parse';
-import fs from 'fs';
-import { promisify } from 'util';
 
-const readFile = promisify(fs.readFile);
-
-export const createImport = async (req, res) => {
+exports.getListeImportation = async (req, res) => {
   try {
-    const { file } = req;
-    const userId = req.user.id;
-    
-    if (!file) {
-      return res.status(400).json({ error: 'Aucun fichier uploadé' });
-    }
-
-    // 1. Lecture du fichier CSV
-    const fileContent = await readFile(file.path, 'utf8');
-    
-    // 2. Parsing du CSV
-    const parser = parse(fileContent, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true
+    const imports = await prisma.reapprovisionnement.findMany({
+      select: {
+        id: true,
+        reference: true,
+        status: true,
+        // fileName: true,
+        // supplier: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
     });
 
-    const records = await new Promise((resolve, reject) => {
-      const data = [];
-      parser.on('readable', () => {
-        let record;
-        while ((record = parser.read()) !== null) {
-          data.push(record);
-        }
-      });
-      parser.on('error', reject);
-      parser.on('end', () => resolve(data));
-    });
-
-    // 3. Validation des données requises
-    const requiredFields = ['code_art', 'oem', 'marque', 'quantite', 'prix_achat'];
-    for (const record of records) {
-      for (const field of requiredFields) {
-        if (!record[field]) {
-          return res.status(400).json({ 
-            error: `Champ manquant: ${field}`,
-            record
-          });
-        }
-      }
-    }
-
-    // 4. Création de l'import
-    const importData = {
-      reference: `IMP-${Date.now().toString(36).toUpperCase()}`,
-      description: `Import du ${new Date().toLocaleDateString()}`,
-      tauxDeChange: new Prisma.Decimal(req.body.tauxDeChange || 1),
-      fretAvecDD: new Prisma.Decimal(req.body.fretAvecDD || 0),
-      fretSansDD: new Prisma.Decimal(req.body.fretSansDD || 0),
-      douane: new Prisma.Decimal(req.body.douane || 0),
-      tva: new Prisma.Decimal(req.body.tva || 0),
-      marge: new Prisma.Decimal(req.body.marge || 0.3), // Marge par défaut 30%
-      fileName: file.originalname,
-      userId,
-      parts: {
-        create: records.map(record => ({
-          codeArt: record.code_art,
-          oem: record.oem,
-          marque: record.marque,
-          autoFinal: record.auto_final || '',
-          libelle: record.libelle || `${record.marque} ${record.oem}`,
-          quantity: parseInt(record.quantite),
-          qttArrive: parseInt(record.qtt_arrive || record.quantite),
-          poids: parseFloat(record.poids || 0),
-          purchasePrice: new Prisma.Decimal(record.prix_achat),
-          salePrice: new Prisma.Decimal(0), // Calculé plus tard
-          margin: new Prisma.Decimal(0) // Calculé plus tard
-        }))
-      }
-    };
-
-    // 5. Calcul des prix de vente
-    const calculatedImport = await calculatePrices(importData);
-
-    // 6. Enregistrement en base
-    const newImport = await prisma.import.create({
-      data: calculatedImport,
-      include: { parts: true }
-    });
-
-    // 7. Mise à jour des stocks
-    await updateStockFromImport(newImport);
-
-    res.status(201).json(newImport);
-
+    res.json(imports);
   } catch (error) {
-    console.error('Erreur lors de l\'import:', error);
-    res.status(500).json({ 
-      error: 'Erreur lors du traitement de l\'import',
-      details: error.message 
-    });
+    console.error("Error fetching import:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };
 
-// Helper function pour calculer les prix
-async function calculatePrices(importData) {
-  const exchangeRate = importData.tauxDeChange.toNumber();
-  const tvaRate = importData.tva.toNumber();
-  const marginRate = importData.marge.toNumber();
+// exports.getListeImportation = async (req, res) => {
+//   try {
+//     const imports = await prisma.import.findMany({
+//       select: {
+//         id: true,
+//         reference: true,
+//         status: true,
+//         fileName: true,
+//         // supplier: true,
+//         importedAt: true,
+//       },
+//       orderBy: { importedAt: "desc" },
+//     });
 
-  return {
-    ...importData,
-    parts: {
-      create: importData.parts.create.map(part => {
-        const purchasePrice = part.purchasePrice.toNumber() * exchangeRate;
-        const costPrice = purchasePrice + 
-                         (purchasePrice * importData.douane.toNumber()) + 
-                         (purchasePrice * tvaRate);
-        const salePrice = costPrice * (1 + marginRate);
+//     res.json(imports);
+//   } catch (error) {
+//     console.error("Error fetching import:", error);
+//     res.status(500).json({ error: "Internal server error" });
+//   }
+// };
 
-        return {
-          ...part,
-          purchasePrice: new Prisma.Decimal(purchasePrice),
-          salePrice: new Prisma.Decimal(salePrice.toFixed(2)),
-          margin: new Prisma.Decimal(marginRate)
-        };
-      })
-    }
-  };
-}
+exports.getImportedPart = async (req, res) => {
+  try {
+    const { importId } = req.params;
 
-// Helper function pour mettre à jour les stocks
-async function updateStockFromImport(importData) {
-  for (const part of importData.parts) {
-    // Trouver ou créer le produit correspondant
-    let product = await prisma.product.findFirst({
-      where: { oem: part.oem, marque: part.marque }
-    });
-
-    if (!product) {
-      product = await prisma.product.create({
-        data: {
-          referenceCode: `PROD-${part.oem}-${part.marque}`,
-          oem: part.oem,
-          marque: part.marque,
-          libelle: part.libelle,
-          category: 'AUTO'
-        }
-      });
-    }
-
-    // Mettre à jour le stock
-    await prisma.stock.upsert({
-      where: { productId: product.id },
-      update: { 
-        quantite: { increment: part.qttArrive },
-        status: part.qttArrive > 0 ? 'DISPONIBLE' : 'RUPTURE'
+    const parts = await prisma.reapproItem.findMany({
+      where: { reapproId: Number(importId) },
+      include: {
+        product: true, // 👈 Inclure les infos produit liées
       },
-      create: {
-        productId: product.id,
-        quantite: part.qttArrive,
-        status: 'DISPONIBLE'
-      }
     });
 
-    // Lier la pièce importée au produit
-    await prisma.importedPart.update({
-      where: { id: part.id },
-      data: { productId: product.id }
-    });
+    const transformedParts = parts.map((item) => ({
+      code:
+        item.product?.codeArt ||
+        `ART-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+      marque: item.product?.marque || "",
+      reference: item.product?.oem || "",
+      autofinal: item.product?.autoFinal || "",
+      libelle: item.product?.lib1 || "",
+      quantite: Number(item.quantity) || 1,
+      quantiteArrivee:
+        Number(item.product?.qttArrive) || Number(item.quantity) || 1,
+      prixUnitaireEur: Number(item.unitPrice) || 0,
+      poidsKg: Number(item.weightKg) || 0,
+    }));
+
+    res.json(transformedParts);
+  } catch (error) {
+    console.error("Error fetching parts:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-}
+};
+
+// exports.getImportedPart = async (req, res) => {
+//   try {
+//     const { importId } = req.params;
+
+//     const parts = await prisma.importedPart.findMany({
+//       where: { importId: Number(importId) },
+//     });
+
+//     const transformedParts = parts.map((item) => ({
+//       code:
+//         item.codeArt ||
+//         `ART-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+//       marque: item.marque || "",
+//       reference: item.oem || "",
+//       autofinal: item.autoFinal || "",
+//       libelle: item.lib1 || "",
+//       quantite: Number(item.quantity) || 1,
+//       quantiteArrivee: Number(item.qttArrive) || Number(item.quantity) || 1,
+//       prixUnitaireEur: Number(item.purchasePrice) || 0,
+//       poidsKg: Number(item.poids) || 0,
+//     }));
+
+//     res.json(transformedParts);
+//   } catch (error) {
+//     console.error("Error fetching parts:", error);
+//     res.status(500).json({ error: "Internal server error" });
+//   }
+// };

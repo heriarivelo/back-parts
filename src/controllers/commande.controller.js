@@ -2,23 +2,79 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const orderService = require("../services/order.service");
 
+// const getCommandesHistorique = async (req, res) => {
+//   try {
+//     const commandes = await prisma.commandeVente.findMany({
+//       orderBy: { createdAt: "desc" },
+//       include: {
+//         customer: true,
+//         manager: true,
+//         pieces: {
+//           include: {
+//             product: true,
+//           },
+//         },
+//         factures: true,
+//       },
+//     });
+
+//     res.json(commandes);
+//   } catch (error) {
+//     console.error("Erreur historique commande:", error);
+//     res.status(500).json({ error: "Erreur serveur" });
+//   }
+// };
+
 const getCommandesHistorique = async (req, res) => {
   try {
-    const commandes = await prisma.commandeVente.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        customer: true,
-        manager: true,
-        pieces: {
-          include: {
-            product: true,
+    // Récupération des paramètres de pagination depuis la requête
+    const page = parseInt(req.query.page) || 1; // Page par défaut : 1
+    const pageSize = parseInt(req.query.pageSize) || 10; // Taille par défaut : 10 éléments
+
+    // Calcul du nombre d'éléments à sauter
+    const skip = (page - 1) * pageSize;
+
+    // Requête avec pagination
+    const [commandes, totalCount] = await Promise.all([
+      prisma.commandeVente.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          customer: true,
+          manager: true,
+          pieces: {
+            include: {
+              product: true,
+            },
+          },
+          factures: {
+            include: {
+              remises: true,
+              paiements: true,
+            },
           },
         },
-        factures: true,
+        skip: skip,
+        take: pageSize,
+      }),
+      prisma.commandeVente.count(), // Compte total pour calculer le nombre de pages
+    ]);
+
+    // Calcul des métadonnées de pagination
+    const totalPages = Math.ceil(totalCount / pageSize);
+    const hasNext = page < totalPages;
+    const hasPrevious = page > 1;
+
+    res.json({
+      data: commandes,
+      pagination: {
+        currentPage: page,
+        pageSize,
+        totalCount,
+        totalPages,
+        hasNext,
+        hasPrevious,
       },
     });
-
-    res.json(commandes);
   } catch (error) {
     console.error("Erreur historique commande:", error);
     res.status(500).json({ error: "Erreur serveur" });
@@ -354,7 +410,7 @@ const createOrders = async (req, res) => {
         data: items.map((item) => ({
           productId: item.productId,
           quantity: -item.quantity,
-          type: "ADJUSTMENT",
+          type: "COMMANDE",
           source: `Commande: ${newOrder.reference}`,
           reason: info.vehicule ? `Véhicule: ${info.vehicule}` : null,
         })),

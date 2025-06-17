@@ -1,6 +1,9 @@
 // product.controller.t
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+
+const getStockByImport = require("../services/historiquePrix.service");
+
 const getPriceHistory = async (req, res) => {
   try {
     const { productId } = req.params;
@@ -123,8 +126,24 @@ const updatePrixPiece = async (req, res) => {
   }
 };
 
+const handleGetStockByImport = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.productId);
+    if (isNaN(productId)) {
+      return res.status(400).json({ error: "productId invalide" });
+    }
+
+    const stock = await getStockByImport.getStockByImport(productId);
+    res.json(stock);
+  } catch (error) {
+    console.error("Erreur lors de la récupération du stock :", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+};
+
 module.exports = {
   getPriceHistory,
   updatePrixPiece,
+  handleGetStockByImport,
   //   updatePaymentStatus,
 };
