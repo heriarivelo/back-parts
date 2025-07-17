@@ -91,6 +91,7 @@ exports.getStocksEntreposes = async (req, res) => {
             product: {
               select: {
                 id: true,
+                codeArt: true,
                 oem: true,
                 marque: true,
                 referenceCode: true,
@@ -118,6 +119,7 @@ exports.getStocksEntreposes = async (req, res) => {
       id: item.stock.id,
       stockEntrepotId: item.id,
       quantite: item.quantite,
+      codeArt: item.stock.product.codeArt,
       oem: item.stock.product.oem,
       marque: item.stock.product.marque,
       referenceCode: item.stock.product.referenceCode,
@@ -151,6 +153,7 @@ exports.findByCode_article = async (req, res) => {
         OR: [
           { referenceCode: { contains: searchQuery, mode: "insensitive" } },
           { oem: { contains: searchQuery, mode: "insensitive" } },
+          { codeArt: { contains: searchQuery, mode: "insensitive" } },
           { marque: { contains: searchQuery, mode: "insensitive" } },
           { libelle: { contains: searchQuery, mode: "insensitive" } },
           { autoFinal: { contains: searchQuery, mode: "insensitive" } },
@@ -183,6 +186,7 @@ exports.findByCode_article = async (req, res) => {
     // Formatage des résultats
     const result = stocks.map((stock) => ({
       id: stock.id,
+      productId: stock.productId,
       quantite: stock.qttsansEntrepot,
       product: stock.product,
       prixFinal: stock.prixFinal,
@@ -558,6 +562,64 @@ exports.transferStock = async (req, res) => {
     console.error("Erreur lors du transfert:", error);
     res.status(500).json({
       error: "Erreur lors du transfert",
+      details: error.message,
+    });
+  }
+};
+
+// router.get('/api/entrepots/stock/:productId', produitIdEntrepots) => {
+exports.produitIdEntrepots = async (req, res) => {
+  try {
+    const productId = parseInt(req.params.productId);
+
+    if (isNaN(productId)) {
+      return res.status(400).json({ error: "ID produit invalide" });
+    }
+
+    const entrepots = await prisma.entrepot.findMany({
+      where: {
+        stockEntrepots: {
+          some: {
+            stock: {
+              productId: productId,
+              quantite: { gt: 0 }, // Seulement les entrepôts avec stock disponible
+            },
+          },
+        },
+      },
+      include: {
+        stockEntrepots: {
+          where: {
+            stock: {
+              productId: productId,
+            },
+          },
+          include: {
+            stock: true,
+          },
+        },
+      },
+    });
+
+    // Transformation sécurisée des données
+    const result = entrepots.map((entrepot) => {
+      const stock = entrepot.stockEntrepots[0]?.stock;
+      return {
+        id: entrepot.id,
+        libelle: entrepot.libelle,
+        quantite: stock ? entrepot.stockEntrepots[0].quantite : 0,
+        productId: stock?.productId || productId,
+      };
+    });
+
+    // Console.log utile pour le débogage
+    console.log("Entrepôts disponibles:", JSON.stringify(result, null, 2));
+
+    res.json(result);
+  } catch (error) {
+    console.error("Erreur dans produitIdEntrepots:", error);
+    res.status(500).json({
+      error: "Erreur serveur",
       details: error.message,
     });
   }
