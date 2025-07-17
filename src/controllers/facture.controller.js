@@ -1,7 +1,10 @@
 // src/controllers/facture.controller.ts
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
-const { getAllFacturesWithDetails } = require("../services/facture.service");
+const {
+  getAllFacturesWithDetails,
+  annulerFacture,
+} = require("../services/facture.service");
 
 const listFactures = async (req, res) => {
   try {
@@ -221,7 +224,47 @@ const updatePaymentStatus = async (req, res) => {
 //   }
 // };
 
+const annulationFacture = async (req, res) => {
+  try {
+    const { invoiId } = req.params;
+    const { raison, userId } = req.body;
+    // const userId = 1; // Supposant que l'utilisateur est authentifié
+
+    const id = parseInt(invoiId, 10);
+
+    // Appel du service d'annulation
+    const result = await annulerFacture(id, userId, raison);
+
+    // Réponse en cas de succès
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: {
+        facture: result.facture,
+        montantRembourse: result.montantRembourse,
+        details: result.details,
+      },
+    });
+  } catch (error) {
+    // Gestion des erreurs
+    console.error("Erreur dans le contrôleur annulerFacture:", error);
+
+    const statusCode = error.message.includes("non trouvée")
+      ? 404
+      : error.message.includes("déjà annulée")
+      ? 400
+      : 500;
+
+    res.status(statusCode).json({
+      success: false,
+      message: error.message,
+      error: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+};
+
 module.exports = {
   listFactures,
   updatePaymentStatus,
+  annulationFacture,
 };

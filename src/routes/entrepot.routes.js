@@ -5,7 +5,6 @@ const entrepot = require("../controllers/entrepot.controller");
 
 router.post("/", entrepot.createEntrepot);
 router.get("/", entrepot.getAllEntrepots);
-router.delete("/:id", entrepot.deleteEntrepot);
 
 router.get("/entrepot", entrepot.getStocksEntreposes);
 router.get("/one", entrepot.findByCode_article);
@@ -14,5 +13,9 @@ router.put("/entrepots", entrepot.updateEntrepotStock);
 // router.get("/entrepots", entrepot.getArticleEntrepots);
 router.get("/entrepots/no", entrepot.getArticleNoEntrepots);
 router.post("/transfer", entrepot.transferStock);
+
+router.delete("/:id", entrepot.deleteEntrepot);
+
+router.get("/stock/:productId", entrepot.produitIdEntrepots);
 
 module.exports = router;

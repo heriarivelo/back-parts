@@ -81,23 +81,51 @@ const updateUser = async (req, res) => {
 
 const deleteUser = async (req, res) => {
   try {
-    // Empêcher l'admin de se supprimer lui-même
-    if (Number(req.params.id) === req.user.id) {
-      return res
-        .status(400)
-        .json({ error: "Vous ne pouvez pas supprimer votre propre compte" });
+    const userId = Number(req.params.id);
+    const currentUserId = req.body.userId;
+
+    // Validation de l'ID
+    if (isNaN(userId)) {
+      return res.status(400).json({ error: "ID utilisateur invalide" });
     }
 
-    await prisma.user.delete({
-      where: { id: Number(req.params.id) },
+    // Empêcher un utilisateur de se supprimer lui-même
+    if (userId === currentUserId) {
+      return res.status(403).json({
+        error: "Action interdite",
+        message: "Vous ne pouvez pas supprimer votre propre compte",
+      });
+    }
+
+    // Vérifier si l'utilisateur existe avant suppression
+    const userExists = await prisma.user.findUnique({
+      where: { id: userId },
     });
 
-    res.json({ success: true });
+    if (!userExists) {
+      return res.status(404).json({ error: "Utilisateur introuvable" });
+    }
+
+    // Suppression de l'utilisateur
+    await prisma.user.delete({
+      where: { id: userId },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Utilisateur supprimé avec succès",
+    });
   } catch (err) {
+    console.error("Erreur lors de la suppression:", err);
+
     if (err.code === "P2025") {
       return res.status(404).json({ error: "Utilisateur introuvable" });
     }
-    res.status(500).json({ error: "Erreur de suppression" });
+
+    res.status(500).json({
+      error: "Erreur serveur",
+      message: "Échec de la suppression de l'utilisateur",
+    });
   }
 };
 

@@ -434,17 +434,201 @@ const createOrders = async (req, res) => {
   }
 };
 
-// Valider une commande et créer une facture
+// // Valider une commande et créer une facture
+// const validateOrder = async (req, res) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { paymentDetails, discounts } = req.body;
+
+//     console.log(orderId, "orderId");
+//     // console.log(discounts, "paymentDetails");
+//     // console.log(paymentDetails, "paymentDetails");
+
+//     // Récupérer la commande avec les articles
+//     const order = await prisma.commandeVente.findUnique({
+//       where: { id: parseInt(orderId) },
+//       include: {
+//         pieces: {
+//           include: {
+//             product: true,
+//           },
+//         },
+//       },
+//     });
+
+//     if (!order) {
+//       return res.status(404).json({ error: "Order not found" });
+//     }
+
+//     // Calculer le total avec remises
+//     let total = order.totalAmount || 0;
+//     let discountAmount = 0;
+
+//     if (discounts && discounts.length > 0) {
+//       discountAmount = discounts.reduce((sum, discount) => {
+//         return discount.type === "percentage"
+//           ? sum + (total * discount.value) / 100
+//           : sum + discount.value;
+//       }, 0);
+
+//       total -= discountAmount;
+//     }
+
+//     // Créer la facture avec transaction
+//     const result = await prisma.$transaction(async (tx) => {
+//       // 1. Créer la facture
+//       const invoice = await tx.facture.create({
+//         data: {
+//           referenceFacture: `FAC-${Date.now()}`,
+//           // commandeId: parseInt(orderId),
+//           commandeVente: {
+//             connect: { id: order.id }, // ajoutez aussi cette ligne
+//           },
+//           prixTotal: total,
+//           montantPaye: paymentDetails.amount || 0, //nalaina tao am generateFullInvoice
+//           resteAPayer: total - (paymentDetails.amount || 0),
+//           status:
+//             paymentDetails.amount >= total
+//               ? "PAYEE"
+//               : paymentDetails.amount > 0
+//               ? "PARTIELLEMENT_PAYEE"
+//               : "NON_PAYEE",
+//           paidAt: paymentDetails?.amount === total ? new Date() : null, //nalaina tao am generateFullInvoice
+//           remises:
+//             discounts?.length > 0
+//               ? {
+//                   create: discounts.map((d) => ({
+//                     description: d.description,
+//                     taux: d.type === "percentage" ? d.value : null,
+//                     montant: d.type === "fixed" ? d.value : null,
+//                     type:
+//                       d.type === "percentage" ? "POURCENTAGE" : "MONTANT_FIXE",
+//                   })),
+//                 }
+//               : undefined,
+//           createdBy: { connect: { id: paymentDetails.managerId } },
+//         },
+//       });
+
+//       // 2. Enregistrer le paiement si applicable
+//       if (paymentDetails.amount > 0) {
+//         await tx.paiement.create({
+//           data: {
+//             // factureId: invoice.id,
+//             facture: {
+//               connect: { id: invoice.id }, // Connecte au paiement à la facture créée
+//             },
+//             montant: paymentDetails.amount,
+//             mode: paymentDetails.method,
+//             reference: paymentDetails.reference,
+//             manager: {
+//               connect: { id: paymentDetails.managerId },
+//             },
+//           },
+//         });
+//       }
+
+//       const usedLots = [];
+
+//       for (const item of order.pieces) {
+//         let remainingQty = item.quantite;
+//         const usedLots = [];
+
+//         const availableLots = await tx.importedPart.findMany({
+//           where: {
+//             productId: item.productId,
+//             qttArrive: { gt: 0 },
+//           },
+//           include: { import: true },
+//           orderBy: { import: { importedAt: "asc" } },
+//         });
+
+//         // Validation rapide du stock total
+//         const totalAvailable = availableLots.reduce(
+//           (sum, lot) => sum + lot.qttArrive,
+//           0
+//         );
+//         if (totalAvailable < remainingQty) {
+//           throw new Error(`Stock total insuffisant pour le produit ${item.productId}.
+//       Demandé: ${remainingQty}, Disponible: ${totalAvailable}`);
+//         }
+
+//         // Mise à jour asynchrone des lots
+//         const updates = [];
+//         for (const lot of availableLots) {
+//           if (remainingQty <= 0) break;
+
+//           const qty = Math.min(remainingQty, lot.qttArrive);
+//           updates.push(
+//             tx.importedPart.update({
+//               where: { id: lot.id },
+//               data: { qttArrive: { decrement: qty } },
+//             }),
+//             tx.stockMovement.create({
+//               data: {
+//                 productId: item.productId,
+//                 quantity: qty,
+//                 type: "SALE",
+//                 source: `Facture: ${invoice.referenceFacture}`,
+//                 reason: `Lot ${lot.import.reference}`,
+//               },
+//             })
+//           );
+
+//           usedLots.push({
+//             lot: lot.import.reference,
+//             quantity: qty,
+//             cost: lot.prixAchat * qty, // Pour calcul du COGS
+//           });
+
+//           remainingQty -= qty;
+//         }
+
+//         await Promise.all(updates);
+
+//         // Mise à jour du stock global (une seule opération)
+//         await tx.stock.updateMany({
+//           where: { productId: item.productId },
+//           data: {
+//             quantite: { decrement: item.quantite },
+//             quantiteVendu: { increment: item.quantite },
+//           },
+//         });
+//       }
+
+//       // 4. Mettre à jour le statut de la commande
+//       await tx.commandeVente.update({
+//         where: { id: order.id },
+//         data: {
+//           status: paymentDetails.amount >= total ? "LIVREE" : "TRAITEMENT",
+//         },
+//       });
+
+//       return { order, invoice, usedLots }; //nalaina tao am createorderwithInvoice
+//     });
+
+//     res.status(201).json(result);
+//   } catch (error) {
+//     console.error("Error validating order:", error);
+//     res.status(500).json({ error: "Failed to validate order" });
+//   }
+// };
+
 const validateOrder = async (req, res) => {
+  console.log("\n=== DEBUT validateOrder ===");
+  // console.log("Headers:", req.headers);
+  console.log("Body:", JSON.stringify(req.body, null, 2));
+
   try {
     const { orderId } = req.params;
-    const { paymentDetails, discounts } = req.body;
+    const { paymentDetails, discounts, pieces } = req.body;
 
-    console.log(orderId, "orderId");
-    // console.log(discounts, "paymentDetails");
-    // console.log(paymentDetails, "paymentDetails");
+    // Validation renforcée
+    if (!paymentDetails?.managerId) {
+      throw new Error("Manager ID est requis");
+    }
 
-    // Récupérer la commande avec les articles
+    // Récupération de la commande
     const order = await prisma.commandeVente.findUnique({
       where: { id: parseInt(orderId) },
       include: {
@@ -457,162 +641,376 @@ const validateOrder = async (req, res) => {
     });
 
     if (!order) {
-      return res.status(404).json({ error: "Order not found" });
+      throw new Error(`Commande ${orderId} non trouvée`);
     }
 
-    // Calculer le total avec remises
-    let total = order.totalAmount || 0;
-    let discountAmount = 0;
-
-    if (discounts && discounts.length > 0) {
-      discountAmount = discounts.reduce((sum, discount) => {
-        return discount.type === "percentage"
-          ? sum + (total * discount.value) / 100
-          : sum + discount.value;
-      }, 0);
-
-      total -= discountAmount;
+    // Vérification des pièces
+    if (!pieces?.length || pieces.length !== order.pieces.length) {
+      throw new Error("Configuration des pièces invalide");
     }
 
-    // Créer la facture avec transaction
+    // Calcul des totaux
+    const total = order.totalAmount || 0;
+    const discountAmount =
+      discounts?.reduce(
+        (sum, d) =>
+          d.type === "percentage"
+            ? sum + (total * d.value) / 100
+            : sum + d.value,
+        0
+      ) || 0;
+
+    const finalAmount = total - discountAmount;
+    const paidAmount = paymentDetails.amount || 0;
+
+    // Transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Créer la facture
+      // Création facture
       const invoice = await tx.facture.create({
         data: {
-          referenceFacture: `FAC-${Date.now()}`,
-          // commandeId: parseInt(orderId),
-          commandeVente: {
-            connect: { id: order.id }, // ajoutez aussi cette ligne
-          },
-          prixTotal: total,
-          montantPaye: paymentDetails.amount || 0, //nalaina tao am generateFullInvoice
-          resteAPayer: total - (paymentDetails.amount || 0),
+          referenceFacture: req.body.referenceFacture || `FAC-${Date.now()}`,
+          commandeVente: { connect: { id: order.id } },
+          prixTotal: finalAmount,
+          montantPaye: paidAmount,
+          resteAPayer: finalAmount - paidAmount,
           status:
-            paymentDetails.amount >= total
+            paidAmount >= finalAmount
               ? "PAYEE"
-              : paymentDetails.amount > 0
+              : paidAmount > 0
               ? "PARTIELLEMENT_PAYEE"
               : "NON_PAYEE",
-          paidAt: paymentDetails?.amount === total ? new Date() : null, //nalaina tao am generateFullInvoice
-          remises:
-            discounts?.length > 0
-              ? {
-                  create: discounts.map((d) => ({
-                    description: d.description,
-                    taux: d.type === "percentage" ? d.value : null,
-                    montant: d.type === "fixed" ? d.value : null,
-                    type:
-                      d.type === "percentage" ? "POURCENTAGE" : "MONTANT_FIXE",
-                  })),
-                }
-              : undefined,
+          paidAt: paidAmount >= finalAmount ? new Date() : null,
+          remises: discounts?.length
+            ? {
+                create: discounts.map((d) => ({
+                  description: d.description,
+                  taux: d.type === "percentage" ? d.value : null,
+                  montant: d.type === "fixed" ? d.value : null,
+                  type:
+                    d.type === "percentage" ? "POURCENTAGE" : "MONTANT_FIXE",
+                })),
+              }
+            : undefined,
           createdBy: { connect: { id: paymentDetails.managerId } },
         },
       });
 
-      // 2. Enregistrer le paiement si applicable
-      if (paymentDetails.amount > 0) {
+      // Paiement
+      if (paidAmount > 0) {
         await tx.paiement.create({
           data: {
-            // factureId: invoice.id,
-            facture: {
-              connect: { id: invoice.id }, // Connecte au paiement à la facture créée
-            },
-            montant: paymentDetails.amount,
+            facture: { connect: { id: invoice.id } },
+            montant: paidAmount,
             mode: paymentDetails.method,
             reference: paymentDetails.reference,
-            manager: {
-              connect: { id: paymentDetails.managerId },
-            },
+            manager: { connect: { id: paymentDetails.managerId } },
           },
         });
       }
 
-      const usedLots = [];
-
-      for (const item of order.pieces) {
-        let remainingQty = item.quantite;
-        const usedLots = [];
-
-        const availableLots = await tx.importedPart.findMany({
-          where: {
-            productId: item.productId,
-            qttArrive: { gt: 0 },
-          },
-          include: { import: true },
-          orderBy: { import: { importedAt: "asc" } },
-        });
-
-        // Validation rapide du stock total
-        const totalAvailable = availableLots.reduce(
-          (sum, lot) => sum + lot.qttArrive,
-          0
-        );
-        if (totalAvailable < remainingQty) {
-          throw new Error(`Stock total insuffisant pour le produit ${item.productId}. 
-      Demandé: ${remainingQty}, Disponible: ${totalAvailable}`);
-        }
-
-        // Mise à jour asynchrone des lots
-        const updates = [];
-        for (const lot of availableLots) {
-          if (remainingQty <= 0) break;
-
-          const qty = Math.min(remainingQty, lot.qttArrive);
-          updates.push(
-            tx.importedPart.update({
-              where: { id: lot.id },
-              data: { qttArrive: { decrement: qty } },
-            }),
-            tx.stockMovement.create({
-              data: {
-                productId: item.productId,
-                quantity: qty,
-                type: "SALE",
-                source: `Facture: ${invoice.referenceFacture}`,
-                reason: `Lot ${lot.import.reference}`,
-              },
-            })
-          );
-
-          usedLots.push({
-            lot: lot.import.reference,
-            quantity: qty,
-            cost: lot.prixAchat * qty, // Pour calcul du COGS
-          });
-
-          remainingQty -= qty;
-        }
-
-        await Promise.all(updates);
-
-        // Mise à jour du stock global (une seule opération)
-        await tx.stock.updateMany({
-          where: { productId: item.productId },
-          data: {
-            quantite: { decrement: item.quantite },
-            quantiteVendu: { increment: item.quantite },
-          },
-        });
+      // Gestion des stocks
+      for (const piece of pieces) {
+        await processStock(tx, piece, invoice);
       }
 
-      // 4. Mettre à jour le statut de la commande
+      // Mise à jour commande
       await tx.commandeVente.update({
         where: { id: order.id },
-        data: {
-          status: paymentDetails.amount >= total ? "LIVREE" : "TRAITEMENT",
+        data: { status: paidAmount >= finalAmount ? "LIVREE" : "TRAITEMENT" },
+      });
+
+      return { success: true, invoice };
+    });
+
+    console.log("=== TRANSACTION REUSSIE ===");
+    res.status(201).json(result);
+  } catch (error) {
+    console.error("ERREUR:", {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date(),
+    });
+    res.status(500).json({
+      error: error.message.includes("Stock") ? error.message : "Erreur serveur",
+      details: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
+  }
+};
+
+async function processStock(tx, piece, invoice) {
+  try {
+    console.log(
+      `Traitement du produit ${piece.productId} dans l'entrepôt ${
+        piece.entrepotId || "aucun"
+      }`
+    );
+
+    // 1. Trouver le stock global du produit
+    const globalStock = await tx.stock.findFirst({
+      where: {
+        productId: piece.productId,
+        quantite: { gte: piece.quantite },
+      },
+    });
+
+    if (!globalStock) {
+      throw new Error(
+        `Stock global insuffisant pour le produit ${piece.productId}`
+      );
+    }
+
+    // 2. Mise à jour du stock global
+    await tx.stock.update({
+      where: { id: globalStock.id },
+      data: {
+        quantite: { decrement: piece.quantite },
+        quantiteVendu: { increment: piece.quantite },
+      },
+    });
+
+    // 3. Si un entrepôt est spécifié
+    if (piece.entrepotId) {
+      // Trouver le stock spécifique à l'entrepôt
+      const stockEntrepot = await tx.stockEntrepot.findFirst({
+        where: {
+          stockId: globalStock.id, // Utilisez stockId au lieu de productId
+          entrepotId: piece.entrepotId,
+          quantite: { gte: piece.quantite },
         },
       });
 
-      return { order, invoice, usedLots }; //nalaina tao am createorderwithInvoice
-    });
+      if (!stockEntrepot) {
+        throw new Error(
+          `Stock insuffisant dans l'entrepôt ${piece.entrepotId} pour le produit ${piece.productId}`
+        );
+      }
 
-    res.status(201).json(result);
+      // Mise à jour du stock de l'entrepôt
+      await tx.stockEntrepot.update({
+        where: { id: stockEntrepot.id },
+        data: { quantite: { decrement: piece.quantite } },
+      });
+    }
+
+    // 4. Enregistrer le mouvement de stock
+    await tx.stockMovement.create({
+      data: {
+        productId: piece.productId,
+        type: "SALE",
+        quantity: -piece.quantite,
+        source: piece.entrepotId
+          ? `FACTURE:${invoice.id}|ENTREPOT:${piece.entrepotId}`
+          : `FACTURE:${invoice.id}`,
+        reason: `Vente ${invoice.referenceFacture}`,
+      },
+    });
   } catch (error) {
-    console.error("Error validating order:", error);
-    res.status(500).json({ error: "Failed to validate order" });
+    console.error(
+      `Erreur lors du traitement du stock pour le produit ${piece.productId}:`,
+      error
+    );
+    throw error; // Important: propager l'erreur pour annuler la transaction
   }
-};
+}
+
+// const validateOrder = async (req, res) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { paymentDetails, discounts, pieces } = req.body;
+
+//     console.log(
+//       "Début validateOrder - Body reçu:",
+//       JSON.stringify(req.body, null, 2)
+//     ); // Debug 1
+
+//     // Validation des données
+//     if (!paymentDetails || !paymentDetails.managerId) {
+//       return res.status(400).json({ error: "Manager ID is required" });
+//     }
+
+//     // Récupération de la commande
+//     const order = await prisma.commandeVente.findUnique({
+//       where: { id: parseInt(orderId) },
+//       include: {
+//         pieces: {
+//           include: {
+//             product: true,
+//           },
+//         },
+//       },
+//     });
+
+//     if (!order) {
+//       return res.status(404).json({ error: "Commande non trouvée" });
+//     }
+
+//     // Vérification des pièces
+//     if (!pieces || pieces.length !== order.pieces.length) {
+//       return res
+//         .status(400)
+//         .json({ error: "Configuration des pièces invalide" });
+//     }
+
+//     // Calcul des totaux
+//     const total = order.totalAmount || 0;
+//     let discountAmount = 0;
+
+//     if (discounts?.length > 0) {
+//       discountAmount = discounts.reduce((sum, discount) => {
+//         return discount.type === "percentage"
+//           ? sum + (total * discount.value) / 100
+//           : sum + discount.value;
+//       }, 0);
+//     }
+
+//     const finalAmount = total - discountAmount;
+//     const paidAmount = paymentDetails.amount || 0;
+
+//     // Transaction
+//     const result = await prisma.$transaction(async (tx) => {
+//       // Création de la facture
+//       const invoice = await tx.facture.create({
+//         data: {
+//           referenceFacture: `FAC-${Date.now()}`,
+//           commandeVente: { connect: { id: order.id } },
+//           prixTotal: finalAmount,
+//           montantPaye: paidAmount,
+//           resteAPayer: finalAmount - paidAmount,
+//           status:
+//             paidAmount >= finalAmount
+//               ? "PAYEE"
+//               : paidAmount > 0
+//               ? "PARTIELLEMENT_PAYEE"
+//               : "NON_PAYEE",
+//           paidAt: paidAmount >= finalAmount ? new Date() : null,
+//           remises:
+//             discounts?.length > 0
+//               ? {
+//                   create: discounts.map((d) => ({
+//                     description: d.description,
+//                     taux: d.type === "percentage" ? d.value : null,
+//                     montant: d.type === "fixed" ? d.value : null,
+//                     type:
+//                       d.type === "percentage" ? "POURCENTAGE" : "MONTANT_FIXE",
+//                   })),
+//                 }
+//               : undefined,
+//           createdBy: { connect: { id: paymentDetails.managerId } },
+//         },
+//       });
+
+//       // Enregistrement du paiement
+//       if (paidAmount > 0) {
+//         await tx.paiement.create({
+//           data: {
+//             facture: { connect: { id: invoice.id } },
+//             montant: paidAmount,
+//             mode: paymentDetails.method,
+//             reference: paymentDetails.reference,
+//             manager: { connect: { id: paymentDetails.managerId } },
+//           },
+//         });
+//       }
+
+//       // Gestion des stocks
+//       for (const piece of pieces) {
+//         // Vérification de la disponibilité
+//         const stock = await tx.stock.findFirst({
+//           where: {
+//             productId: piece.productId,
+//             status: "DISPONIBLE",
+//             quantite: { gte: piece.quantite },
+//           },
+//         });
+
+//         if (!stock) {
+//           throw new Error(
+//             `Stock insuffisant pour le produit ${piece.productId}`
+//           );
+//         }
+
+//         // Mise à jour du stock global
+//         await tx.stock.update({
+//           where: { id: stock.id },
+//           data: {
+//             quantite: { decrement: piece.quantite },
+//             quantiteVendu: { increment: piece.quantite },
+//           },
+//         });
+
+//         // Mouvement de stock global
+//         await tx.stockMovement.create({
+//           data: {
+//             productId: piece.productId,
+//             type: "SALE",
+//             quantity: -piece.quantite,
+//             source: `FACTURE:${invoice.id}`,
+//             reason: `Vente facturée ${invoice.referenceFacture}`,
+//           },
+//         });
+
+//         // Gestion des entrepôts si spécifié
+//         if (piece.entrepotId) {
+//           const stockEntrepot = await tx.stockEntrepot.findFirst({
+//             where: {
+//               productId: piece.productId,
+//               entrepotId: piece.entrepotId,
+//               quantite: { gte: piece.quantite },
+//             },
+//           });
+
+//           if (!stockEntrepot) {
+//             throw new Error(
+//               `Stock insuffisant dans l'entrepôt ${piece.entrepotId}`
+//             );
+//           }
+
+//           await tx.stockEntrepot.update({
+//             where: { id: stockEntrepot.id },
+//             data: {
+//               quantite: { decrement: piece.quantite },
+//             },
+//           });
+
+//           await tx.stockMovement.create({
+//             data: {
+//               productId: piece.productId,
+//               type: "SALE",
+//               quantity: -piece.quantite,
+//               source: `FACTURE:${invoice.id}|ENTREPOT:${piece.entrepotId}`,
+//               reason: `Vente facturée ${invoice.referenceFacture}`,
+//             },
+//           });
+//         }
+//       }
+
+//       // Mise à jour du statut de la commande
+//       await tx.commandeVente.update({
+//         where: { id: order.id },
+//         data: {
+//           status: paidAmount >= finalAmount ? "LIVREE" : "TRAITEMENT",
+//         },
+//       });
+
+//       return {
+//         success: true,
+//         invoice,
+//         orderId: order.id,
+//         total: finalAmount,
+//         paid: paidAmount,
+//         remaining: finalAmount - paidAmount,
+//       };
+//     });
+
+//     res.status(201).json(result);
+//   } catch (error) {
+//     console.error("Erreur validation commande:", error);
+//     res.status(500).json({
+//       error: "Échec de la validation",
+//       details: error.message,
+//     });
+//   }
+// };
 
 module.exports = {
   getCommandesHistorique,

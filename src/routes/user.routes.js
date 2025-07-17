@@ -7,6 +7,7 @@ const {
   createUser,
 } = require("../controllers/user.controller.js");
 // const AuthController = require("../controllers/auth.controller");
+const authMiddleware = require("../middlewares/auth.middleware");
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ const router = express.Router();
 router.get("/", getAllUsers);
 router.get("/:id", getUserById);
 router.put("/:id", updateUser);
-router.delete("/:id", deleteUser);
+router.delete("/:id", deleteUser, authMiddleware);
 router.post("/", createUser); // Ajouter à la suite des autres routes
 
 module.exports = router;
