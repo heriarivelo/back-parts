@@ -130,26 +130,43 @@ const deleteUser = async (req, res) => {
 };
 
 const createUser = async (req, res) => {
-  const { name, email, password, role } = await registerSchema.validateAsync(
-    req.body
-  );
-  // console.log("data back", data);
+  try {
+    const { name, email, password, role } = await registerSchema.validateAsync(
+      req.body
+    );
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) throw new Error("Utilisateur déjà existant");
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(400).json({ error: "Utilisateur déjà existant" });
+    }
 
-  const hashed = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(password, 10);
 
-  const user = await prisma.user.create({
-    data: { name, email, password: hashed, role: role || "USER" },
-  });
+    const user = await prisma.user.create({
+      data: { name, email, password: hashed, role: role || "USER" },
+    });
 
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-  };
+    // ✅ Correction : Utiliser res.json() pour envoyer la réponse
+    res.json({
+      message: "Utilisateur enregistré",
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      }
+    });
+
+  } catch (error) {
+    console.error("Erreur création utilisateur:", error);
+    
+    // ✅ Toujours renvoyer une réponse même en cas d'erreur
+    if (error.isJoi) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+    
+    res.status(500).json({ error: "Erreur serveur lors de la création d'utilisateur" });
+  }
 };
 
 module.exports = {
