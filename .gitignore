@@ -7,7 +7,7 @@ node_modules
 .pnp.js
 
 # 2️⃣ ENVIRONNEMENT & SECRETS
-# .env                # Fichiers de variables sensibles (DB, API keys, etc.)
+.env                # Fichiers de variables sensibles (DB, API keys, etc.)
 .env.local          # Fichiers locaux override
 .env.*              # Tous les fichiers d'environnement (dev, test, prod)
 !.env.example       # (Optionnel) Gardez un exemple versionné
