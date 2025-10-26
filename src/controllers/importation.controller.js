@@ -4,12 +4,13 @@ const prisma = new PrismaClient();
 exports.getListeImportation = async (req, res) => {
   try {
     const imports = await prisma.reapprovisionnement.findMany({
+      where: {
+        status: 'SHIPPED', // 👈 filtre uniquement ceux qui sont validés
+      },
       select: {
         id: true,
         reference: true,
         status: true,
-        // fileName: true,
-        // supplier: true,
         createdAt: true,
       },
       orderBy: { createdAt: "desc" },
@@ -22,26 +23,6 @@ exports.getListeImportation = async (req, res) => {
   }
 };
 
-// exports.getListeImportation = async (req, res) => {
-//   try {
-//     const imports = await prisma.import.findMany({
-//       select: {
-//         id: true,
-//         reference: true,
-//         status: true,
-//         fileName: true,
-//         // supplier: true,
-//         importedAt: true,
-//       },
-//       orderBy: { importedAt: "desc" },
-//     });
-
-//     res.json(imports);
-//   } catch (error) {
-//     console.error("Error fetching import:", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// };
 
 exports.getImportedPart = async (req, res) => {
   try {
@@ -76,31 +57,3 @@ exports.getImportedPart = async (req, res) => {
   }
 };
 
-// exports.getImportedPart = async (req, res) => {
-//   try {
-//     const { importId } = req.params;
-
-//     const parts = await prisma.importedPart.findMany({
-//       where: { importId: Number(importId) },
-//     });
-
-//     const transformedParts = parts.map((item) => ({
-//       code:
-//         item.codeArt ||
-//         `ART-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
-//       marque: item.marque || "",
-//       reference: item.oem || "",
-//       autofinal: item.autoFinal || "",
-//       libelle: item.lib1 || "",
-//       quantite: Number(item.quantity) || 1,
-//       quantiteArrivee: Number(item.qttArrive) || Number(item.quantity) || 1,
-//       prixUnitaireEur: Number(item.purchasePrice) || 0,
-//       poidsKg: Number(item.poids) || 0,
-//     }));
-
-//     res.json(transformedParts);
-//   } catch (error) {
-//     console.error("Error fetching parts:", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// };

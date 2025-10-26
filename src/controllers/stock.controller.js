@@ -197,42 +197,6 @@ const getAvailableProducts = async (req, res) => {
   }
 };
 
-// const updateStock = async (req, res) => {
-//   const { productId, quantity, reason, movementType } = req.body;
-//   //   const userId = req.user.id;
-
-//   // Validation du type de mouvement
-//   const validTypes = Object.values(MovementType);
-//   if (!validTypes.includes(movementType)) {
-//     return res.status(400).json({ error: "Type de mouvement invalide" });
-//   }
-
-//   await prisma.$transaction([
-//     prisma.stockMovement.create({
-//       data: {
-//         productId,
-//         quantity: Math.abs(quantity),
-//         type: movementType,
-//         reason,
-//         // userId
-//       },
-//     }),
-//     prisma.stock.updateMany({
-//       where: { productId },
-//       data: {
-//         quantite: {
-//           increment: quantity,
-//         },
-//       },
-//     }),
-//   ]);
-
-//   res.json({ success: true });
-// };
-
-// zavabaovao
-
-// controllers/stock.controller.ts
 const getProductDistribution = async (req, res) => {
   const productId = parseInt(req.params.productId);
 
@@ -437,6 +401,21 @@ const updateStockDistribution = async (req, res) => {
   }
 };
 
+const getAllStocksWithoutPagination = async (req, res) => {
+  try {
+    const stocks = await prisma.stock.findMany({
+      include: {
+        product: true,
+      },
+    });
+    res.json(stocks);
+  } catch (error) {
+    console.error("Erreur récupération stocks:", error);
+    res.status(500).json({ error: "Erreur serveur" });
+  }
+};
+
+
 module.exports = {
   getStockStatus, //liste stock pour le manager pour l'instant
   getStockAnalytics,
@@ -444,4 +423,5 @@ module.exports = {
   getAvailableProducts,
   getProductDistribution,
   updateStockDistribution,
+  getAllStocksWithoutPagination
 };

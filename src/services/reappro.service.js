@@ -1,8 +1,6 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-// const prisma = require("../prisma");
-
 class OrderService {
   static async getOrders({
     supplierId,
@@ -96,64 +94,6 @@ class OrderService {
       include: { supplier: true },
     });
   }
-
-  // static async getLowStockProducts(threshold = 5) {
-  //   try {
-  //     const results = await prisma.stock.findMany({
-  //       where: {
-  //         quantite: {
-  //           lte: threshold,
-  //         },
-  //         status: "DISPONIBLE",
-  //       },
-  //       select: {
-  //         id: true,
-  //         quantite: true,
-  //         prixFinal: true,
-  //         product: {
-  //           select: {
-  //             id: true,
-  //             referenceCode: true,
-  //             codeArt: true,
-  //             libelle: true,
-  //             oem: true,
-  //             marque: true,
-  //             importDetails: {
-  //               select: {
-  //                 id: true,
-  //                 poids: true,
-  //                 purchasePrice: true,
-  //               },
-  //             },
-  //           },
-  //         },
-  //       },
-  //       orderBy: {
-  //         quantite: "asc",
-  //       },
-  //     });
-
-  //     // Formatage des résultats pour le frontend
-  //     return results.map((item) => ({
-  //       ...item,
-  //       productId: item.product.id,
-  //       referenceCode: item.product.referenceCode,
-  //       libelle: item.product.libelle,
-  //       oem: item.product.oem,
-  //       marque: item.product.marque,
-  //       category: item.product.category,
-  //       // entrepot: item.entrepot?.libelle || "Non spécifié",
-  //       quantite: item.quantite,
-  //       prixFinal: item.prixFinal,
-  //     }));
-  //   } catch (error) {
-  //     console.error(
-  //       "Erreur lors de la récupération des stocks faibles :",
-  //       error
-  //     );
-  //     throw error;
-  //   }
-  // }
 
   static async getLowStockProducts(threshold = 5, page = 1, pageSize = 10) {
     try {
@@ -294,6 +234,14 @@ class OrderService {
 
       return reappro;
     });
+  }
+
+  static async updateStatus(id, statut) {
+    return prisma.reapprovisionnement.update({
+      where: { id },
+      data: { status: statut },
+      include: { supplier: true },
+    })
   }
 }
 

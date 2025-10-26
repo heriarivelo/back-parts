@@ -116,6 +116,26 @@ const submitReappro = async (req, res) => {
   }
 };
 
+  const updateStatus = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!status) {
+        return res.status(400).json({ message: "Le champ 'status' est requis." });
+      }
+
+      const updatedOrder = await OrderService.updateStatus(parseInt(id), status);
+      res.status(200).json({
+        message: 'Statut mis à jour avec succès.',
+        order: updatedOrder
+      });
+    } catch (error) {
+      console.error('Erreur updateStatus:', error);
+      res.status(500).json({ message: 'Erreur lors de la mise à jour du statut.', error });
+    }
+  }
+
 module.exports = {
   listLowStock,
   getOrders,
@@ -123,4 +143,5 @@ module.exports = {
   getOrderDetails,
   submitReappro,
   cancelOrder,
+  updateStatus,
 };
