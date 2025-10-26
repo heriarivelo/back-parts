@@ -71,7 +71,6 @@ exports.deleteEntrepot = async (req, res) => {
 };
 
 // Obtenir les stocks d'un entrepôt
-// Obtenir les stocks d'un entrepôt
 exports.getStocksEntreposes = async (req, res) => {
   try {
     const { entrepotId } = req.query;
@@ -307,10 +306,6 @@ exports.getArticleNoEntrepots = async (req, res) => {
   }
 };
 
-// src/controllers/stock.controller.ts
-// import { Request, Response } from 'express';
-// import prisma from '../prisma';
-
 exports.updateStockEntrepot = async (req, res) => {
   const { stockId } = req.params;
   const { entrepotId, quantity } = req.body;
@@ -420,81 +415,6 @@ exports.transferStock = async (req, res) => {
     ) {
       return res.status(400).json({ error: "Paramètres invalides" });
     }
-
-    // const transferResult = await prisma.$transaction(async (prisma) => {
-    //   // 1. Vérifier que le stock source existe et a suffisamment de quantité
-    //   const sourceStock = await prisma.stockEntrepot.findUnique({
-    //     where: {
-    //       stockId_entrepotId: {
-    //         stockId: parseInt(stockId),
-    //         entrepotId: parseInt(fromEntrepotId),
-    //       },
-    //     },
-    //   });
-
-    //   if (!sourceStock || sourceStock.quantite < quantity) {
-    //     throw new Error("Stock source insuffisant ou introuvable");
-    //   }
-
-    //   // 2. Diminuer le stock source
-    //   await prisma.stockEntrepot.update({
-    //     where: {
-    //       stockId_entrepotId: {
-    //         stockId: parseInt(stockId),
-    //         entrepotId: parseInt(fromEntrepotId),
-    //       },
-    //     },
-    //     data: {
-    //       quantite: {
-    //         decrement: parseFloat(quantity),
-    //       },
-    //     },
-    //   });
-
-    //   // 3. Augmenter le stock destination (ou créer si n'existe pas)
-    //   await prisma.stockEntrepot.upsert({
-    //     where: {
-    //       stockId_entrepotId: {
-    //         stockId: parseInt(stockId),
-    //         entrepotId: parseInt(toEntrepotId),
-    //       },
-    //     },
-    //     update: {
-    //       quantite: {
-    //         increment: parseFloat(quantity),
-    //       },
-    //     },
-    //     create: {
-    //       stockId: parseInt(stockId),
-    //       entrepotId: parseInt(toEntrepotId),
-    //       quantite: parseFloat(quantity),
-    //     },
-    //   });
-
-    //   // 4. Retourner les nouvelles valeurs
-    //   const updatedSource = await prisma.stockEntrepot.findUnique({
-    //     where: {
-    //       stockId_entrepotId: {
-    //         stockId: parseInt(stockId),
-    //         entrepotId: parseInt(fromEntrepotId),
-    //       },
-    //     },
-    //   });
-
-    //   const updatedDest = await prisma.stockEntrepot.findUnique({
-    //     where: {
-    //       stockId_entrepotId: {
-    //         stockId: parseInt(stockId),
-    //         entrepotId: parseInt(toEntrepotId),
-    //       },
-    //     },
-    //   });
-
-    //   return {
-    //     source: updatedSource,
-    //     destination: updatedDest,
-    //   };
-    // });
 
     const transferResult = await prisma.$transaction(async (tx) => {
       // 1. Vérifier la disponibilité dans l'entrepôt source

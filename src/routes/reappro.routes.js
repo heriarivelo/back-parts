@@ -8,6 +8,7 @@ const {
   getOrderDetails,
   submitReappro,
   cancelOrder,
+  updateStatus
 } = require("../controllers/reappro.controller");
 
 const importedPart = require("../controllers/importation.controller");
@@ -25,8 +26,10 @@ router.post("/", submitReappro);
 router.get("/", getOrders);
 
 // ❗ Routes dynamiques à mettre à la fin
+router.put('/:id/status', updateStatus);
 router.get("/:id", getOrderDetails);
 router.patch("/:id/cancel", cancelOrder);
+
 
 // ✅ Tu peux ajouter des routes d'export Excel ici aussi
 // router.get("/export/excel", exportToExcel);
