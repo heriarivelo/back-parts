@@ -21,6 +21,7 @@ const getCommandesHistorique = async (req, res) => {
           pieces: {
             include: {
               product: true,
+              customProduct:true,
             },
           },
           factures: {
@@ -101,6 +102,7 @@ const getOrderDetails = async (req, res) => {
                 },
               },
             },
+            customProduct: true, // ✅ ajout pour les commandes particulières
           },
         },
         factures: true,
@@ -111,10 +113,10 @@ const getOrderDetails = async (req, res) => {
       return res.status(404).json({ error: "Commande non trouvée" });
     }
 
-    // Calcul des totaux pour la commande
+    // ✅ Calcul des totaux (standard ou particulier)
     const totals = {
       subtotal: order.pieces.reduce(
-        (sum, item) => sum + item.quantite * item.prixArticle,
+        (sum, item) => sum + (item.prixArticle * item.quantite),
         0
       ),
       itemsCount: order.pieces.length,
@@ -124,11 +126,23 @@ const getOrderDetails = async (req, res) => {
       ),
     };
 
+    // ✅ Transformation de sortie (fusionner product & customProduct)
+    const piecesWithResolvedProduct = order.pieces.map((piece) => {
+      const resolvedProduct = piece.product || piece.customProduct || null;
+
+      return {
+        ...piece,
+        resolvedProduct, // champ unifié pour ton front
+      };
+    });
+
     res.json({
       ...order,
+      pieces: piecesWithResolvedProduct,
       totals,
     });
   } catch (error) {
+    console.error("Erreur getOrderDetails:", error);
     res.status(500).json({
       error: "Erreur lors de la récupération de la commande",
       details: error.message,
@@ -136,116 +150,99 @@ const getOrderDetails = async (req, res) => {
   }
 };
 
+
 const createOrders = async (req, res) => {
-  console.log(
-    "Début createOrders - Body reçu:",
-    JSON.stringify(req.body, null, 2)
-  ); // Debug 1
+  console.log("📦 Début createOrders", JSON.stringify(req.body, null, 2));
 
   try {
     const {
       customerType = "B2B",
+      commandeType = "STANDARD",
       customerId = null,
       managerId,
       items,
       info = {},
     } = req.body;
 
-    // Debug 2 - Vérification des données
-    console.log("Données extraites:", {
-      customerType,
-      customerId,
-      managerId,
-      itemsCount: items?.length,
-      info,
-    });
-
-    // 1. Validation renforcée
-    if (!managerId) {
-      console.error("Erreur: managerId manquant");
+    if (!managerId)
       return res.status(400).json({ error: "managerId est obligatoire" });
-    }
-
-    if (!items?.length) {
-      console.error("Erreur: aucun article fourni");
+    if (!items?.length)
       return res
         .status(400)
         .json({ error: "Au moins un article est obligatoire" });
-    }
 
-    // 2. Calcul du total
     const totalAmount = items.reduce(
       (sum, item) =>
         sum + (parseFloat(item.unitPrice) || 0) * (item.quantity || 1),
       0
     );
 
-    // 3. Transaction
     const order = await prisma.$transaction(async (tx) => {
+      // 🔹 1. Gestion du client
       let finalCustomerId = customerId;
-      console.log("customerId initial:", finalCustomerId); // Debug 3
-
-      // Gestion du client si customerId non fourni
       if (!finalCustomerId) {
-        console.log("Recherche/création client..."); // Debug 4
-
         const tel = info.contact?.trim();
         const email = info.email?.trim().toLowerCase();
         const nom = info.nom?.trim();
 
-        console.log("Infos client normalisées:", { tel, email, nom }); // Debug 5
-
-        // Recherche client existant
         if (tel || email) {
-          const whereClause = { OR: [] };
-          if (tel) whereClause.OR.push({ telephone: tel });
-          if (email) whereClause.OR.push({ email });
-
-          console.log(
-            "Requête findFirst:",
-            JSON.stringify(whereClause, null, 2)
-          ); // Debug 6
-
           const existingClient = await tx.customer.findFirst({
-            where: whereClause,
+            where: {
+              OR: [{ telephone: tel || "" }, { email: email || "" }],
+            },
           });
-
-          if (existingClient) {
-            finalCustomerId = existingClient.id;
-            console.log("Client existant trouvé:", existingClient); // Debug 7
-          }
+          if (existingClient) finalCustomerId = existingClient.id;
         }
 
-        // Création nouveau client
         if (!finalCustomerId && nom && (tel || email)) {
-          console.log("Création nouveau client..."); // Debug 8
-
-          const clientData = {
-            nom,
-            type: customerType,
-            telephone: tel || null,
-            email: email || null,
-            siret: info.nif?.trim() || null,
-            adresse: info.adresse?.trim() || null,
-          };
-
-          console.log("Data client:", clientData); // Debug 9
-
-          try {
-            const newClient = await tx.customer.create({
-              data: clientData,
-            });
-            finalCustomerId = newClient.id;
-            console.log("Nouveau client créé:", newClient); // Debug 10
-          } catch (e) {
-            console.error("Erreur création client:", e); // Debug 11
-          }
+          const newClient = await tx.customer.create({
+            data: {
+              nom,
+              type: customerType,
+              telephone: tel || null,
+              email: email || null,
+              siret: info.nif?.trim() || null,
+              adresse: info.adresse?.trim() || null,
+            },
+          });
+          finalCustomerId = newClient.id;
         }
       }
 
-      console.log("finalCustomerId avant création commande:", finalCustomerId); // Debug 12
+      // 🔹 2. Préparation des items
+      const piecesData = [];
 
-      // Création commande
+      for (const item of items) {
+        if (item.productId) {
+          // ✅ Cas produit existant
+          piecesData.push({
+            productId: item.productId,
+            quantite: item.quantity,
+            prixArticle: parseFloat(item.unitPrice) || 0,
+          });
+        } else {
+          // ⚙️ Cas commande particulière → création d’un CustomProduct
+          const customProduct = await tx.customProduct.create({
+            data: {
+              codeArt: item.reference || "",
+              libelle: item.productName || "Produit non référencé",
+              marque: item.marque || null,
+              oem: item.oem || null,
+              autoFinal: item.autoFinal || null,
+              prixUnitaire: parseFloat(item.unitPrice) || 0,
+              notes: item.notes || null,
+            },
+          });
+
+          piecesData.push({
+            customProductId: customProduct.id, // 👈 lien vers le CustomProduct
+            quantite: item.quantity,
+            prixArticle: parseFloat(item.unitPrice) || 0,
+          });
+        }
+      }
+
+      // 🔹 3. Création de la commande
       const newOrder = await tx.commandeVente.create({
         data: {
           reference: `CMD-${Date.now()}`,
@@ -253,48 +250,48 @@ const createOrders = async (req, res) => {
           managerId,
           totalAmount,
           type: customerType,
+          commandetype: commandeType,
           status: "EN_ATTENTE",
           libelle:
             info.nom && !finalCustomerId
               ? `Client occasionnel: ${info.nom}`
               : null,
           pieces: {
-            create: items.map((item) => ({
-              productId: item.productId,
-              quantite: item.quantity,
-              prixArticle: parseFloat(item.unitPrice) || 0,
-            })),
+            create: piecesData,
           },
         },
         include: { pieces: true },
       });
 
-      console.log("Commande créée:", newOrder); // Debug 13
+      console.log("✅ Commande créée:", newOrder.reference);
 
-      // Réservation stock
-      await tx.stockMovement.createMany({
-        data: items.map((item) => ({
+      // 🔹 4. Mouvement de stock uniquement pour les produits existants
+      const stockMovements = items
+        .filter((i) => i.productId) // exclut les produits particuliers
+        .map((item) => ({
           productId: item.productId,
           quantity: -item.quantity,
           type: "COMMANDE",
           source: `Commande: ${newOrder.reference}`,
           reason: info.vehicule ? `Véhicule: ${info.vehicule}` : null,
-        })),
-      });
+        }));
+
+      if (stockMovements.length > 0) {
+        await tx.stockMovement.createMany({ data: stockMovements });
+      }
 
       return newOrder;
     });
 
-    // Réponse
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       order,
     });
   } catch (error) {
-    console.error("Erreur complète:", error); // Debug 14
+    console.error("❌ Erreur création commande:", error);
     res.status(500).json({
       success: false,
-      error: "Échec de la création",
+      error: "Échec de la création de commande",
       details: process.env.NODE_ENV === "development" ? error.message : null,
     });
   }
@@ -397,6 +394,12 @@ const validateOrder = async (req, res) => {
 
       // Gestion des stocks
       for (const piece of pieces) {
+        if (!piece.productId) {
+          console.log(
+            `🟢 Pièce ${piece.customProductId || '(custom)'} ignorée pour la gestion de stock (commande particulière).`
+          );
+          continue; // ⛔ ne pas traiter les produits sans stock
+        }
         await processStock(tx, piece, invoice);
       }
 
@@ -500,6 +503,27 @@ async function processStock(tx, piece, invoice) {
   }
 }
 
+const getClientProCommandeWithDetails = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId, 10);
+    if (isNaN(orderId)) {
+      return res.status(400).json({ error: 'ID de commande invalide' });
+    }
+
+    const resultat = await orderService.getClientProCommandeWithDetails(orderId);
+    if (!resultat) {
+      return res.status(404).json({ error: 'Commande introuvable' });
+    }
+
+    // Retourner directement l'objet, pas dans un tableau
+    return res.status(200).json(resultat);
+  } catch (error) {
+    console.error('Erreur dans getClientProCommandeWithDetails:', error);
+    return res.status(500).json({ error: 'Erreur serveur lors de la récupération de la commande' });
+  }
+};
+
+
 module.exports = {
   getCommandesHistorique,
   createOrders,
@@ -509,4 +533,5 @@ module.exports = {
   getAllCommandes,
   getOrderDetails,
   validateOrder,
+  getClientProCommandeWithDetails
 };

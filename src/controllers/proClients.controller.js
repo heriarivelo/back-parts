@@ -225,8 +225,7 @@ exports.createProClient = async (req, res) => {
       name,
       siret,
       address,
-      //   postalCode,
-      //   city,
+        city,
       activity,
       contactName,
       contactPosition,
@@ -237,12 +236,15 @@ exports.createProClient = async (req, res) => {
     } = req.body;
 
     console.log("ici", name);
+    const fullAddress = [address, city]
+      .filter(Boolean)
+      .join(', ');
 
     const newClient = await prisma.customer.create({
       data: {
         nom: name,
         siret,
-        adresse: address,
+        adresse: fullAddress,
         // postalCode,
         // city,
         type: "B2B",
@@ -266,6 +268,7 @@ exports.createProClient = async (req, res) => {
 };
 
 // Mettre à jour un client professionnel
+// server/controllers/proClientsController.js
 exports.updateProClient = async (req, res) => {
   try {
     const { id } = req.params;
@@ -273,34 +276,24 @@ exports.updateProClient = async (req, res) => {
       name,
       siret,
       address,
-      postalCode,
       city,
-      // activity,
-      // contactName,
-      // contactPosition,
       phone,
       email,
-      // paymentTerms,
-      // creditLimit,
     } = req.body;
+
+    // Construire l'adresse complète
+    const fullAddress = [address, city]
+      .filter(Boolean)
+      .join(', ');
 
     const updatedClient = await prisma.customer.update({
       where: { id: parseInt(id) },
       data: {
         nom: name,
         siret,
-        adresse: address && postalCode,
-        // postalCode,
-        // city,
+        adresse: fullAddress, // ✅ CORRECTION
         telephone: phone,
         email,
-        // metadata: {
-        //   activity,
-        //   contactName,
-        //   contactPosition,
-        //   paymentTerms: parseInt(paymentTerms) || 30,
-        //   creditLimit: parseFloat(creditLimit) || 0,
-        // },
       },
     });
 
@@ -373,6 +366,7 @@ exports.getClientDetails = async (req, res) => {
           ? "Actif"
           : "Inactif",
       lastOrders: client.commandes.map((cmd) => ({
+        orderId: cmd.id,
         orderNumber: cmd.reference,
         date: cmd.createdAt,
         amount:

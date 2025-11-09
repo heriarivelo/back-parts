@@ -40,6 +40,7 @@ class OrderService {
                   referenceCode: true,
                   marque: true,
                   oem: true,
+                  autoFinal:true,
                 },
               },
             },

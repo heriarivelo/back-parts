@@ -203,6 +203,7 @@ model CommandeVente {
   status      CommandeStatus   @default(EN_ATTENTE)
   totalAmount Float            @map("total_amount") // Nouveau champ calculé
   type        OrderType        @default(RETAIL)
+  commandetype        CommandeType @default(STANDARD)
   // Relations
   pieces      PiecesCommande[] @relation("CommandePieces")
   factures    Facture[]        @relation("CommandeFactures")
@@ -224,6 +225,12 @@ enum OrderType {
   WHOLESALE
 }
 
+enum CommandeType {
+  STANDARD
+  PARTICULIERE
+}
+
+
 enum CommandeStatus {
   EN_ATTENTE
   TRAITEMENT
@@ -231,12 +238,30 @@ enum CommandeStatus {
   ANNULEE
 }
 
+model CustomProduct {
+  id           Int      @id @default(autoincrement())
+  codeArt       String?
+  libelle      String
+  marque       String?
+  oem          String?
+  autoFinal    String?
+  prixUnitaire Float?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  commandes      PiecesCommande[]
+}
+
 model PiecesCommande {
   id         Int           @id @default(autoincrement())
   commande   CommandeVente @relation("CommandePieces", fields: [commandeId], references: [id])
   commandeId Int           @map("commande_id")
-  product    Product       @relation(fields: [productId], references: [id])
-  productId  Int           @map("product_id")
+  product    Product?       @relation(fields: [productId], references: [id])
+  productId  Int?           @map("product_id")
+
+  customProduct   CustomProduct?   @relation(fields: [customProductId], references: [id])
+  customProductId Int?
 
   // Détails de la commande
   quantite    Int   @default(0)

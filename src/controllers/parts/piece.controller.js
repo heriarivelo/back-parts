@@ -24,6 +24,7 @@ const searchPieces = async (req, res) => {
           { marque: { contains: q, mode: "insensitive" } },
           { oem: { contains: q, mode: "insensitive" } },
           { libelle: { contains: q, mode: "insensitive" } },
+          { autoFinal: { contains: q, mode: "insensitive" } },
         ],
       },
       include: {

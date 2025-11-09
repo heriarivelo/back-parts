@@ -9,5 +9,6 @@ router.get("/", orderController.getCommandesHistorique);
 router.get("/all", orderController.getAllCommandes);
 router.get("/:id", orderController.getOrderDetails);
 router.post("/:orderId/validate", orderController.validateOrder);
+router.get('/:orderId/details', orderController.getClientProCommandeWithDetails);
 
 module.exports = router;

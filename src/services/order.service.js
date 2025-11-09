@@ -179,37 +179,6 @@ class OrderService {
     });
   }
 
-  // async createCommande(data) {
-  //   const { customerId, managerId, libelle, type, pieces } = data;
-
-  //   return await prisma.commandeVente.create({
-  //     data: {
-  //       reference: `CMD-${Date.now()}`, // Génération simple
-  //       customer: customerId ? { connect: { id: customerId } } : undefined,
-  //       manager: { connect: { id: managerId } },
-  //       libelle,
-  //       type,
-  //       status: "EN_ATTENTE",
-  //       totalAmount: pieces.reduce(
-  //         (sum, p) => sum + p.prixArticle * p.quantite,
-  //         0
-  //       ),
-  //       pieces: {
-  //         create: pieces.map((p) => ({
-  //           product: { connect: { id: p.productId } },
-  //           quantite: p.quantite,
-  //           prixArticle: p.prixArticle,
-  //           remise: p.remise || 0,
-  //         })),
-  //       },
-  //     },
-  //     include: {
-  //       pieces: true,
-  //       customer: true,
-  //     },
-  //   });
-  // }
-
   async getAllCommandes() {
     try {
       const commandes = await prisma.commandeVente.findMany({
@@ -225,6 +194,7 @@ class OrderService {
           pieces: {
             include: {
               product: true,
+              customProduct: true,
             },
           },
           factures: true,
@@ -237,6 +207,92 @@ class OrderService {
       throw new Error("Impossible de récupérer les commandes");
     }
   }
+
+// async getClientProCommandeWithDetails(orderId) {
+//   // Assure que orderId est un nombre ou converti
+//   const commandes = await prisma.commandeVente.findMany({
+//     where: { id: orderId },
+//     include: {
+//       // customer: true,
+//       pieces: {
+//         include: {
+//           product: true,
+//           customProduct: true
+//         }
+//       },
+//       factures: {
+//           include: {
+//             remises: true,
+//             paiements: true,
+//           },
+//         },
+//     },
+//     orderBy: {
+//       createdAt: 'desc'
+//     }
+//   });
+
+//   return commandes.map(c => {
+//     // renommer c plutôt que “facture” pour plus de clarté
+//     const pieces = (c.pieces || []).map(piece => {
+//       const unified = piece.product || piece.customProduct || null;
+//       // on peut omettre product/customProduct ou les laisser ; ici je conserve unified
+//       return {
+//         ...piece,
+//         product: unified
+//       };
+//     });
+
+//     return {
+//       ...c,
+//       pieces
+//     };
+//   });
+// }
+
+async getClientProCommandeWithDetails(orderId) {
+  // Utiliser findUnique au lieu de findMany pour récupérer un seul objet
+  const commande = await prisma.commandeVente.findUnique({
+    where: { 
+      id: orderId 
+    },
+    include: {
+      pieces: {
+        include: {
+          product: true,
+          customProduct: true
+        }
+      },
+      factures: {
+        include: {
+          remises: true,
+          paiements: true,
+        },
+      },
+    }
+  });
+
+  if (!commande) {
+    return null;
+  }
+
+  // Transformer les pièces
+  const pieces = (commande.pieces || []).map(piece => {
+    const unified = piece.product || piece.customProduct || null;
+    return {
+      ...piece,
+      product: unified
+    };
+  });
+
+  // Retourner un objet unique, pas un tableau
+  return {
+    ...commande,
+    pieces
+  };
+}
+
+
 }
 
 module.exports = new OrderService();
