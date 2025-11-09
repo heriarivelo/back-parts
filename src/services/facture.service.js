@@ -1,8 +1,9 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
+
 const getAllFacturesWithDetails = async () => {
-  return await prisma.facture.findMany({
+  const factures = await prisma.facture.findMany({
     include: {
       commandeVente: {
         include: {
@@ -10,6 +11,7 @@ const getAllFacturesWithDetails = async () => {
           pieces: {
             include: {
               product: true,
+              customProduct: true,
             },
           },
         },
@@ -22,7 +24,56 @@ const getAllFacturesWithDetails = async () => {
       createdAt: "desc",
     },
   });
+
+  return factures.map(facture => {
+    const commande = facture.commandeVente;
+    const pieces = (commande.pieces || []).map(piece => {
+      // unifier le produit
+      const unified = piece.product || piece.customProduct || null;
+
+      // on crée un nouveau champ product unifié, et on supprime ou ignore les deux originaux
+      const { product, customProduct, ...restPiece } = piece;
+
+      return {
+        ...restPiece,
+        product: unified,
+      };
+    });
+
+    return {
+      ...facture,
+      commandeVente: {
+        ...commande,
+        pieces,
+      },
+    };
+  });
 };
+
+
+// const getAllFacturesWithDetails = async () => {
+//   return await prisma.facture.findMany({
+//     include: {
+//       commandeVente: {
+//         include: {
+//           customer: true,
+//           pieces: {
+//             include: {
+//               product: true,
+//               customProduct: true,
+//             },
+//           },
+//         },
+//       },
+//       remises: true,
+//       paiements: true,
+//       createdBy: true,
+//     },
+//     orderBy: {
+//       createdAt: "desc",
+//     },
+//   });
+// };
 
 const annulerFacture = async (invoiId, userId, raison) => {
   if (!invoiId || !userId || !raison) {

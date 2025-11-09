@@ -8,6 +8,6 @@ router.get("/", proClientsController.getAllProClients);
 router.get("/stats", proClientsController.getProClientsStats);
 router.post("/", proClientsController.createProClient);
 router.get("/:id", proClientsController.getClientDetails);
-router.put("/:id", proClientsController.updateProClient);
+router.patch("/:id", proClientsController.updateProClient);
 
 module.exports = router;

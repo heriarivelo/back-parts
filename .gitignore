@@ -1,6 +1,6 @@
 node_modules
 # Keep environment variables out of version control
-# .env
+.env
 # 1️⃣ DÉPENDANCES 
 /node_modules       # Ignore tous les modules npm (toujours exclure)
 /.pnp               # Plug'n'Play (si vous utilisez Yarn)

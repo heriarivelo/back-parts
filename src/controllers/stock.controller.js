@@ -55,6 +55,7 @@ const getAllStocks = async (req, res) => {
               { libelle: { contains: search, mode: "insensitive" } },
               { oem: { contains: search, mode: "insensitive" } },
               { marque: { contains: search, mode: "insensitive" } },
+              { autoFinal: { contains: search, mode: "insensitive" } },
             ],
           }
         : undefined,
