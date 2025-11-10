@@ -205,34 +205,59 @@ exports.updateEntrepotStock = async (req, res) => {
   try {
     const { stockId, entrepotId } = req.body;
 
-    // Validation des entrées
     const parsedStockId = parseInt(stockId, 10);
-    if (isNaN(parsedStockId)) {
-      return res.status(400).json({ error: "Identifiant de stock invalide." });
+    const parsedEntrepotId = parseInt(entrepotId, 10);
+
+    if (isNaN(parsedStockId) || isNaN(parsedEntrepotId)) {
+      return res.status(400).json({ error: "Identifiants invalides." });
     }
 
-    const parsedEntrepotId =
-      entrepotId !== null ? parseInt(entrepotId, 10) : null;
-    if (entrepotId !== null && isNaN(parsedEntrepotId)) {
-      return res
-        .status(400)
-        .json({ error: "Identifiant d'entrepôt invalide." });
-    }
-
-    // Mise à jour du stock
-    const stock = await prisma.stock.update({
+    // 🔎 Étape 1 : récupérer la quantité sans entrepôt
+    const stock = await prisma.stock.findUnique({
       where: { id: parsedStockId },
-      data: {
+      select: { qttsansEntrepot: true },
+    });
+
+    if (!stock || stock.qttsansEntrepot <= 0) {
+      return res.status(400).json({ error: "Aucune quantité à répartir." });
+    }
+
+    const transferQty = stock.qttsansEntrepot;
+
+    // 🔁 Étape 2 : ajouter ou mettre à jour l’entrée dans StockEntrepot
+    await prisma.stockEntrepot.upsert({
+      where: {
+        stockId_entrepotId: {
+          stockId: parsedStockId,
+          entrepotId: parsedEntrepotId,
+        },
+      },
+      update: {
+        quantite: { increment: transferQty },
+        updatedAt: new Date(),
+      },
+      create: {
+        stockId: parsedStockId,
         entrepotId: parsedEntrepotId,
+        quantite: transferQty,
       },
     });
 
-    res.status(200).json({ message: "Entrepôt mis à jour avec succès", stock });
+    // ✅ Étape 3 : remettre qttsansEntrepot à zéro
+    await prisma.stock.update({
+      where: { id: parsedStockId },
+      data: {
+        qttsansEntrepot: 0,
+      },
+    });
+
+    res.status(200).json({ message: "Stock déplacé avec succès" });
   } catch (error) {
-    console.error("Erreur lors de la mise à jour du stock :", error);
+    console.error("Erreur de mise à jour du stock :", error);
     res.status(500).json({ error: "Erreur interne du serveur." });
   }
 };
+
 
 exports.getArticleNoEntrepots = async (req, res) => {
   try {
