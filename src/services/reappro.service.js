@@ -96,93 +96,95 @@ class OrderService {
     });
   }
 
-  static async getLowStockProducts(threshold = 5, page = 1, pageSize = 10) {
-    try {
-      const skip = (page - 1) * pageSize;
+  static async getLowStockProducts(threshold = 5, page = 1, pageSize = 10, search = "") {
+  try {
+    const skip = (page - 1) * pageSize;
 
-      // Requête principale avec pagination
-      const [results, totalCount] = await Promise.all([
-        prisma.stock.findMany({
-          where: {
-            quantite: {
-              lte: threshold,
-            },
-            status: "DISPONIBLE",
-          },
-          select: {
-            id: true,
-            quantite: true,
-            prixFinal: true,
-            product: {
-              select: {
-                id: true,
-                referenceCode: true,
-                codeArt: true,
-                libelle: true,
-                oem: true,
-                marque: true,
-                importDetails: {
-                  select: {
-                    id: true,
-                    poids: true,
-                    purchasePrice: true,
-                  },
+    // Condition de recherche dynamique
+    const searchFilter = search
+      ? {
+          OR: [
+            { product: { libelle: { contains: search, mode: "insensitive" } } },
+            { product: { marque: { contains: search, mode: "insensitive" } } },
+            { product: { referenceCode: { contains: search, mode: "insensitive" } } },
+            { product: { codeArt: { contains: search, mode: "insensitive" } } },
+            { product: { oem: { contains: search, mode: "insensitive" } } },
+          ],
+        }
+      : {};
+
+    // WHERE principal
+    const whereCondition = {
+      quantite: { lte: threshold },
+      status: "DISPONIBLE",
+      ...searchFilter,
+    };
+
+    // Requête principale avec pagination
+    const [results, totalCount] = await Promise.all([
+      prisma.stock.findMany({
+        where: whereCondition,
+        select: {
+          id: true,
+          quantite: true,
+          prixFinal: true,
+          product: {
+            select: {
+              id: true,
+              referenceCode: true,
+              codeArt: true,
+              libelle: true,
+              oem: true,
+              marque: true,
+              importDetails: {
+                select: {
+                  id: true,
+                  poids: true,
+                  purchasePrice: true,
                 },
               },
             },
           },
-          orderBy: {
-            quantite: "asc",
-          },
-          skip: skip,
-          take: pageSize,
-        }),
-        prisma.stock.count({
-          where: {
-            quantite: {
-              lte: threshold,
-            },
-            status: "DISPONIBLE",
-          },
-        }),
-      ]);
-
-      // Calcul des métadonnées de pagination
-      const totalPages = Math.ceil(totalCount / pageSize);
-      const hasNext = page < totalPages;
-      const hasPrevious = page > 1;
-
-      // Formatage des résultats pour le frontend
-      const formattedResults = results.map((item) => ({
-        ...item,
-        productId: item.product.id,
-        referenceCode: item.product.referenceCode,
-        libelle: item.product.libelle,
-        oem: item.product.oem,
-        marque: item.product.marque,
-        quantite: item.quantite,
-        prixFinal: item.prixFinal,
-      }));
-
-      return {
-        data: formattedResults,
-        pagination: {
-          currentPage: page,
-          pageSize,
-          totalCount,
-          totalPages,
-          hasNext,
-          hasPrevious,
         },
-      };
-    } catch (error) {
-      console.error(
-        "Erreur lors de la récupération des stocks faibles :",
-        error
-      );
-      throw error;
-    }
+        orderBy: { quantite: "asc" },
+        skip,
+        take: pageSize,
+      }),
+      prisma.stock.count({ where: whereCondition }),
+    ]);
+
+    // Pagination
+    const totalPages = Math.ceil(totalCount / pageSize);
+
+    // Formatage final
+    const formattedResults = results.map((item) => ({
+      ...item,
+      productId: item.product?.id,
+      referenceCode: item.product?.referenceCode,
+      libelle: item.product?.libelle,
+      oem: item.product?.oem,
+      marque: item.product?.marque,
+      quantite: item.quantite,
+      prixFinal: item.prixFinal,
+    }));
+
+    return {
+      data: formattedResults,
+      pagination: {
+        currentPage: page,
+        pageSize,
+        totalCount,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
+      },
+    };
+  } catch (error) {
+    console.error("Erreur lors de la récupération des stocks faibles :", error);
+    throw error;
   }
+}
+
 
   static async createReappro(
     items,

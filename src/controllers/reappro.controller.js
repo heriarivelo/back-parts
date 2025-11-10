@@ -64,11 +64,13 @@ const listLowStock = async (req, res) => {
     const threshold = parseInt(req.query.threshold) || 5;
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.pageSize) || 10;
+    const search = req.query.search || "";
 
     const result = await OrderService.getLowStockProducts(
       threshold,
       page,
-      pageSize
+      pageSize,
+      search
     );
     res.json(result);
   } catch (error) {
