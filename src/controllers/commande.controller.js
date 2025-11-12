@@ -181,7 +181,7 @@ const createOrders = async (req, res) => {
       // 🔹 1. Gestion du client
       let finalCustomerId = customerId;
       if (!finalCustomerId) {
-        const tel = info.contact?.trim();
+        const tel = info.telephone?.trim();
         const email = info.email?.trim().toLowerCase();
         const nom = info.nom?.trim();
 
@@ -319,6 +319,7 @@ const validateOrder = async (req, res) => {
         pieces: {
           include: {
             product: true,
+            customProduct:true,
           },
         },
       },
