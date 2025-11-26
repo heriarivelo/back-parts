@@ -42,10 +42,9 @@ exports.getImportedPart = async (req, res) => {
       marque: item.product?.marque || "",
       reference: item.product?.oem || "",
       autofinal: item.product?.autoFinal || "",
-      libelle: item.product?.lib1 || "",
+      libelle: item.product?.libelle || "",
       quantite: Number(item.quantity) || 1,
-      quantiteArrivee:
-        Number(item.product?.qttArrive) || Number(item.quantity) || 1,
+      quantiteArrivee: Number(item.product?.qttArrive) || Number(item.quantity) || 1,
       prixUnitaireEur: Number(item.unitPrice) || 0,
       poidsKg: Number(item.weightKg) || 0,
     }));

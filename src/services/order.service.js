@@ -10,22 +10,6 @@ class OrderService {
       0
     );
 
-    // Calculer les remises selon le type de client
-    // let discounts = [];
-    // if (dto.customerType === "B2B") {
-    //   discounts.push({
-    //     description: "Remise Professionnel",
-    //     amount: subtotal * 0.1,
-    //     type: "POURCENTAGE",
-    //   });
-    // } else if (dto.customerType === "WHOLESALE") {
-    //   discounts.push({
-    //     description: "Remise Grossiste",
-    //     amount: subtotal * 0.15,
-    //     type: "POURCENTAGE",
-    //   });
-    // }
-
     // const totalDiscount = discounts.reduce((sum, d) => sum + d.amount, 0);
     const total = subtotal;
     const tax = total * 0.2; // Exemple TVA 20%
@@ -40,62 +24,6 @@ class OrderService {
       })),
     };
   }
-
-  //   async createOrderWithInvoice(dto) {
-  //     return await prisma.$transaction(async (tx) => {
-  //       // 1. Créer la commande
-  //       const order = await tx.commandeVente.create({
-  //         data: {
-  //           reference: `CMD-${Date.now()}`,
-  //           customerId: dto.customerId,
-  //           managerId: dto.managerId,
-  //           totalAmount: dto.totalAmount,
-  //           type: dto.customerType,
-  //           status: "EN_ATTENTE",
-  //           pieces: {
-  //             create: dto.items.map((item) => ({
-  //               productId: item.productId,
-  //               quantite: item.quantity,
-  //               prixArticle: parseFloat(item.unitPrice),
-  //               remise: item.discount || 0,
-  //             })),
-  //           },
-  //         },
-  //         include: { pieces: true },
-  //       });
-
-  //       // 2. Créer la facture
-  //       const invoice = await tx.facture.create({
-  //         data: {
-  //           referenceFacture: `FAC-${Date.now()}`,
-  //           commandeId: order.id,
-  //           prixTotal: dto.totalAmount,
-  //           status: "NON_PAYEE",
-  //           userId: dto.managerId,
-  //           remises: {
-  //             create:
-  //               dto.discounts?.map((discount) => ({
-  //                 description: discount.description,
-  //                 montant: discount.amount,
-  //                 type: discount.type,
-  //               })) || [],
-  //           },
-  //         },
-  //       });
-
-  //       // 3. Mettre à jour les stocks
-  //       await Promise.all(
-  //         dto.items.map((item) =>
-  //           tx.product.update({
-  //             where: { id: item.productId },
-  //             data: { currentStock: { decrement: item.quantity } },
-  //           })
-  //         )
-  //       );
-
-  //       return { order, invoice };
-  //     });
-  //   }
 
   async createOrderWithInvoice(dto) {
     return await prisma.$transaction(async (tx) => {
@@ -208,47 +136,6 @@ class OrderService {
     }
   }
 
-// async getClientProCommandeWithDetails(orderId) {
-//   // Assure que orderId est un nombre ou converti
-//   const commandes = await prisma.commandeVente.findMany({
-//     where: { id: orderId },
-//     include: {
-//       // customer: true,
-//       pieces: {
-//         include: {
-//           product: true,
-//           customProduct: true
-//         }
-//       },
-//       factures: {
-//           include: {
-//             remises: true,
-//             paiements: true,
-//           },
-//         },
-//     },
-//     orderBy: {
-//       createdAt: 'desc'
-//     }
-//   });
-
-//   return commandes.map(c => {
-//     // renommer c plutôt que “facture” pour plus de clarté
-//     const pieces = (c.pieces || []).map(piece => {
-//       const unified = piece.product || piece.customProduct || null;
-//       // on peut omettre product/customProduct ou les laisser ; ici je conserve unified
-//       return {
-//         ...piece,
-//         product: unified
-//       };
-//     });
-
-//     return {
-//       ...c,
-//       pieces
-//     };
-//   });
-// }
 
 async getClientProCommandeWithDetails(orderId) {
   // Utiliser findUnique au lieu de findMany pour récupérer un seul objet

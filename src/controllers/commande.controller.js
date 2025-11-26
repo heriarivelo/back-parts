@@ -214,11 +214,17 @@ const createOrders = async (req, res) => {
 
       for (const item of items) {
         if (item.productId) {
-          // ✅ Cas produit existant
+          
+          const stock = await tx.stock.findFirst({
+            where: { productId: item.productId },
+          });
+
+          const prixFinal = parseFloat(stock?.prixFinal) || 0;
+
           piecesData.push({
             productId: item.productId,
             quantite: item.quantity,
-            prixArticle: parseFloat(item.unitPrice) || 0,
+            prixArticle: prixFinal,
           });
         } else {
           // ⚙️ Cas commande particulière → création d’un CustomProduct

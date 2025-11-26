@@ -4,10 +4,6 @@ const prisma = new PrismaClient();
 const searchParts = async (req, res) => {
   const { query, oem, marque } = req.query;
 
-  // console.log(query, "query");
-  // console.log(oem, "oem");
-  // console.log(marque, "marque");
-
   const conditions = [];
 
   // Recherche large sur "query"
@@ -54,6 +50,9 @@ const searchParts = async (req, res) => {
       0
     ),
     lastPurchasePrice: product.importDetails[0]?.purchasePrice ?? null,
+    finalPrice: product.stocks?.[0]?.prixFinal
+      ? Number(product.stocks[0].prixFinal)
+      : null,
   }));
 
   res.json(response);
