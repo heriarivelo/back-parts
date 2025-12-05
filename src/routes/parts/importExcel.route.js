@@ -1,4 +1,5 @@
 const express = require('express');
+const importController = require("../../controllers/importation.controller");
 const {   create_article_importation, importExcel, getImports, getImportDetails } = require('../../controllers/parts/importExcel.controller');
 
 const router = express.Router();
@@ -10,6 +11,7 @@ router.post('/local' , create_article_importation);
 
 router.get('/', getImports);
 router.get('/:id/details', getImportDetails);
+router.delete("/:id/annuler", importController.annulerImport);
 
 // module.exports = router;
 

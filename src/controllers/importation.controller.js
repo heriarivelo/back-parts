@@ -1,5 +1,8 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const {
+  annulerImport,
+} = require("../services/importation.service");
 
 exports.getListeImportation = async (req, res) => {
   try {
@@ -55,4 +58,23 @@ exports.getImportedPart = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+  exports.annulerImport = async (req, res) => {
+    const importId = parseInt(req.params.id);
+
+    if (isNaN(importId)) {
+      return res.status(400).json({ success: false, message: "ID invalide" });
+    }
+
+    try {
+      const result = await annulerImport(importId);
+      return res.json(result);
+    } catch (error) {
+      console.error("Erreur annulation import:", error);
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+      });
+    }
+  };
 
