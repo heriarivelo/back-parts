@@ -255,9 +255,67 @@ async function finaliserImportation(importId) {
   }
 }
 
+  async function annulerImport(importId) {
+    return prisma.$transaction(async (tx) => {
+      const importRecord = await tx.import.findUnique({
+        where: { id: importId },
+        include: { parts: true },
+      });
+
+      if (!importRecord) {
+        throw new Error("Import introuvable.");
+      }
+
+      if (importRecord.status !== "COMPLETED") {
+        throw new Error("Seuls les imports déjà complétés peuvent être annulés.");
+      }
+
+      // ROLLBACK DES STOCKS
+      for (const part of importRecord.parts) {
+        if (!part.productId) continue;
+
+        // 1. Retirer la quantité ajoutée au stock
+        await tx.stock.updateMany({
+          where: { productId: part.productId },
+          data: {
+            quantite: { decrement: part.qttArrive },
+            qttsansEntrepot: { decrement: part.qttArrive },
+          },
+        });
+
+        // 2. Enregistrer un mouvement inverse
+        await tx.stockMovement.create({
+          data: {
+            productId: part.productId,
+            type: "ADJUSTMENT",
+            quantity: -part.qttArrive,
+            reason: `Annulation import ${importRecord.reference}`,
+          },
+        });
+      }
+
+      // 3. Supprimer les lignes ImportedPart
+      await tx.importedPart.deleteMany({
+        where: { importId },
+      });
+
+      // 4. Mettre l'import en statut ANNULEE
+      await tx.import.update({
+        where: { id: importId },
+        data: { status: "ANNULEE" },
+      });
+
+      return {
+        success: true,
+        message: "Import annulé avec succès. Stock restauré.",
+      };
+    });
+  };
+
 module.exports = {
   enregistrerImportation,
   finaliserImportation,
+  annulerImport,
 };
 
 // module.exports = {
