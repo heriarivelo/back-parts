@@ -44,22 +44,98 @@ const getStockStatus = async (req, res) => {
 // stock.controller.ts
 const getAllStocks = async (req, res) => {
   try {
-    const { page = 1, limit = 20, search } = req.query;
+    const {
+    page = 1,
+    limit = 20,
+    search,
+    codeArt,
+    referenceCode,
+    libelle,
+    marque,
+    oem,
+    autoFinal,
+    stockStatus,
+    minPrice,
+    maxPrice,
+  } = req.query;
 
-    const whereClause = {
-      product: search
-        ? {
-            OR: [
-              { referenceCode: { contains: search, mode: "insensitive" } },
-              { codeArt: { contains: search, mode: "insensitive" } },
-              { libelle: { contains: search, mode: "insensitive" } },
-              { oem: { contains: search, mode: "insensitive" } },
-              { marque: { contains: search, mode: "insensitive" } },
-              { autoFinal: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : undefined,
-    };
+  const productFilters = [];
+
+  if (search) {
+    productFilters.push({
+      OR: [
+        { referenceCode: { contains: search, mode: "insensitive" } },
+        { codeArt: { contains: search, mode: "insensitive" } },
+        { libelle: { contains: search, mode: "insensitive" } },
+        { oem: { contains: search, mode: "insensitive" } },
+        { marque: { contains: search, mode: "insensitive" } },
+        { autoFinal: { contains: search, mode: "insensitive" } },
+      ],
+    });
+  }
+
+  if (codeArt) {
+    productFilters.push({
+      codeArt: { contains: codeArt, mode: "insensitive" },
+    });
+  }
+
+  if (referenceCode) {
+    productFilters.push({
+      referenceCode: { contains: referenceCode, mode: "insensitive" },
+    });
+  }
+
+  if (libelle) {
+    productFilters.push({
+      libelle: { contains: libelle, mode: "insensitive" },
+    });
+  }
+
+  if (marque) {
+    productFilters.push({
+      marque: { contains: marque, mode: "insensitive" },
+    });
+  }
+
+  if (oem) {
+    productFilters.push({
+      oem: { contains: oem, mode: "insensitive" },
+    });
+  }
+
+  if (autoFinal) {
+    productFilters.push({
+      autoFinal: { contains: autoFinal, mode: "insensitive" },
+    });
+  }
+
+  const whereClause = {
+    ...(productFilters.length > 0 && {
+      product: {
+        AND: productFilters,
+      },
+    }),
+
+    ...(stockStatus === "inStock" && {
+      quantite: { gt: 5 },
+    }),
+
+    ...(stockStatus === "lowStock" && {
+      quantite: { gt: 0, lte: 5 },
+    }),
+
+    ...(stockStatus === "outOfStock" && {
+      quantite: 0,
+    }),
+
+    ...((minPrice || maxPrice) && {
+      prixFinal: {
+        ...(minPrice && { gte: Number(minPrice) }),
+        ...(maxPrice && { lte: Number(maxPrice) }),
+      },
+    }),
+  };
 
     const stocks = await prisma.stock.findMany({
       where: whereClause,
@@ -75,7 +151,15 @@ const getAllStocks = async (req, res) => {
             autoFinal: true,
           },
         },
-        // entrepot: true,
+        entrepots: {
+          include: {
+            entrepot: {
+              select:{
+                libelle:true,
+              }
+            },
+          },
+        },
       },
       skip: (parseInt(page) - 1) * parseInt(limit),
       take: parseInt(limit),
@@ -416,6 +500,107 @@ const getAllStocksWithoutPagination = async (req, res) => {
   }
 };
 
+const searchStockLocations = async (req, res) => {
+  try {
+    const mode = req.query.mode || "unassigned";
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const pageSize = Math.max(parseInt(req.query.pageSize || "10", 10), 1);
+    const search = (req.query.search || "").trim();
+
+    const unassignedWhere = {
+      OR: [
+        {
+          entrepots: { none: {} },
+          quantite: { gt: 0 },
+        },
+        {
+          qttsansEntrepot: { gt: 0 },
+        },
+      ],
+    };
+
+    const searchWhere = search
+      ? {
+          OR: [
+            { lib1: { contains: search, mode: "insensitive" } },
+            { product: { codeArt: { contains: search, mode: "insensitive" } } },
+            { product: { referenceCode: { contains: search, mode: "insensitive" } } },
+            { product: { oem: { contains: search, mode: "insensitive" } } },
+            { product: { marque: { contains: search, mode: "insensitive" } } },
+          ],
+        }
+      : {};
+
+    const where =
+      mode === "unassigned"
+        ? { AND: [unassignedWhere, searchWhere] }
+        : search
+          ? searchWhere
+          : { quantite: { gt: 0 } };
+
+    const [totalItems, stocks] = await Promise.all([
+      prisma.stock.count({ where }),
+      prisma.stock.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { id: "desc" },
+        include: {
+          product: {
+            select: {
+              codeArt: true,
+              referenceCode: true,
+              oem: true,
+              marque: true,
+            },
+          },
+          entrepots: {
+            select: {
+              quantite: true,
+              entrepot: {
+                select: {
+                  id: true,
+                  libelle: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const items = stocks.map((stock) => ({
+      id: stock.id,
+      stockId: stock.id,
+      productId: stock.productId,
+      codeArt: stock.product?.codeArt || null,
+      referenceCode: stock.product?.referenceCode || null,
+      libelle: stock.lib1,
+      lib1: stock.lib1,
+      oem: stock.product?.oem || null,
+      marque: stock.product?.marque || null,
+      quantite: stock.quantite,
+      qttsansEntrepot: stock.qttsansEntrepot,
+      prixFinal: stock.prixFinal,
+      locations: stock.entrepots.map((e) => ({
+        entrepotId: e.entrepot.id,
+        entrepotName: e.entrepot.libelle,
+        quantity: e.quantite,
+      })),
+    }));
+
+    res.status(200).json({
+      items,
+      totalItems,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalItems / pageSize),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 
 module.exports = {
   getStockStatus, //liste stock pour le manager pour l'instant
@@ -424,5 +609,6 @@ module.exports = {
   getAvailableProducts,
   getProductDistribution,
   updateStockDistribution,
-  getAllStocksWithoutPagination
+  getAllStocksWithoutPagination,
+  searchStockLocations
 };

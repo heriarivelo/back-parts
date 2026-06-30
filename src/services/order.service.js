@@ -25,116 +25,88 @@ class OrderService {
     };
   }
 
-  async createOrderWithInvoice(dto) {
-    return await prisma.$transaction(async (tx) => {
-      // Étape 1: Vérifier le stock disponible
-      for (const item of dto.items) {
-        const stock = await tx.stock.findUnique({
-          where: { productId: item.productId },
-        });
+async getAllCommandes({ page = 1, pageSize = 10, search = "" } = {}) {
+  try {
+    page = Math.max(Number(page) || 1, 1);
+    pageSize = Math.min(Math.max(Number(pageSize) || 10, 1), 100);
 
-        if (!stock) {
-          throw new Error(
-            `Aucun stock trouvé pour le produit ID ${item.productId}`
-          );
-        }
+    const skip = (page - 1) * pageSize;
+    const searchTerm = search.trim();
 
-        if (stock.quantite < item.quantity) {
-          throw new Error(
-            `Stock insuffisant pour le produit ID ${item.productId}. Disponible: ${stock.quantite}, Requis: ${item.quantity}`
-          );
-        }
-      }
+    const where = {
+      status: "EN_ATTENTE",
+      ...(searchTerm && {
+        OR: [
+          { reference: { contains: searchTerm } },
+          { customer: { nom: { contains: searchTerm } } },
+          { customer: { telephone: { contains: searchTerm } } },
+          { customer: { email: { contains: searchTerm } } },
+        ],
+      }),
+    };
 
-      // Étape 2: Créer la commande
-      const order = await tx.commandeVente.create({
-        data: {
-          reference: `CMD-${Date.now()}`,
-          customerId: dto.customerId,
-          managerId: dto.managerId,
-          totalAmount: dto.totalAmount,
-          type: dto.customerType,
-          status: "EN_ATTENTE",
-          pieces: {
-            create: dto.items.map((item) => ({
-              productId: item.productId,
-              quantite: item.quantity,
-              prixArticle: parseFloat(item.unitPrice),
-              remise: item.discount || 0,
-            })),
-          },
-        },
-        include: { pieces: true },
-      });
-
-      // Étape 3: Créer la facture
-      const invoice = await tx.facture.create({
-        data: {
-          referenceFacture: `FAC-${Date.now()}`,
-          commandeId: order.id,
-          prixTotal: dto.totalAmount,
-          status: "NON_PAYEE",
-          userId: dto.managerId,
-          remises: {
-            create:
-              dto.discounts?.map((discount) => ({
-                description: discount.description,
-                montant: discount.amount,
-                type: discount.type,
-              })) || [],
-          },
-        },
-      });
-
-      // Étape 4: Mettre à jour les stocks
-      await Promise.all(
-        dto.items.map((item) =>
-          tx.stock.update({
-            where: { productId: item.productId },
-            data: {
-              quantite: {
-                decrement: item.quantity,
-              },
-              quantiteVendu: {
-                increment: item.quantity,
-              },
-            },
-          })
-        )
-      );
-
-      return { order, invoice };
-    });
-  }
-
-  async getAllCommandes() {
-    try {
-      const commandes = await prisma.commandeVente.findMany({
+    const [commandes, totalCount] = await Promise.all([
+      prisma.commandeVente.findMany({
+        where,
         orderBy: { createdAt: "desc" },
-        where: {
-          status: {
-            in: ["EN_ATTENTE", "TRAITEMENT"], // Correction ici
-          },
-        },
-        include: {
-          customer: true,
-          manager: true,
-          pieces: {
-            include: {
-              product: true,
-              customProduct: true,
+        skip,
+        take: pageSize,
+        select: {
+          id: true,
+          reference: true,
+          createdAt: true,
+          status: true,
+          totalAmount: true,
+          type: true,
+          commandetype: true,
+
+          customer: {
+            select: {
+              id: true,
+              nom: true,
+              telephone: true,
+              email: true,
             },
           },
-          factures: true,
-        },
-      });
 
-      return commandes;
-    } catch (error) {
-      console.error("Erreur lors de la récupération des commandes :", error);
-      throw new Error("Impossible de récupérer les commandes");
-    }
+          manager: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+
+          _count: {
+            select: {
+              pieces: true,
+              factures: true,
+            },
+          },
+        },
+      }),
+
+      prisma.commandeVente.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / pageSize);
+
+    return {
+      data: commandes,
+      pagination: {
+        currentPage: page,
+        pageSize,
+        totalCount,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
+      },
+    };
+  } catch (error) {
+    console.error("Erreur lors de la récupération des commandes :", error);
+    throw new Error("Impossible de récupérer les commandes");
   }
+}
 
 
 async getClientProCommandeWithDetails(orderId) {

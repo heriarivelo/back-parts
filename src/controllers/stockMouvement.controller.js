@@ -1,60 +1,129 @@
 const StockMovementService = require("../services/stockMouvement.service");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const { buildDateFilter } = require("../utils/dateFilter");
 
 const StockMovementController = {
-  async getStockMovements(req, res) {
-    try {
-      const {
-        productId,
-        startDate,
-        endDate,
-        type,
-        page = 1,
-        limit = 20,
-      } = req.query;
 
-      const where = {
-        productId: productId ? parseInt(productId) : undefined,
-        type: type ? type : undefined,
-        createdAt: {
-          gte: startDate ? new Date(startDate) : undefined,
-          lte: endDate ? new Date(endDate) : undefined,
-        },
-      };
 
-      const [movements, total] = await Promise.all([
-        prisma.stockMovement.findMany({
-          where,
-          include: {
-            product: {
-              select: {
-                referenceCode: true,
-                libelle: true,
-              },
+async getStockMovements(req, res) {
+  try {
+    const {
+      productId,
+      search,
+      startDate,
+      endDate,
+      type,
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    const currentPage = Math.max(Number(page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+    const where = {};
+
+    if (productId) {
+      where.productId = Number(productId);
+    }
+
+    if (type) {
+      where.type = type;
+    }
+
+    if (startDate || endDate) {
+      where.createdAt = buildDateFilter(startDate, endDate);
+    }
+
+    if (search?.trim()) {
+      const searchTerm = search.trim();
+
+      where.OR = [
+        {
+          product: {
+            codeArt: {
+              contains: searchTerm,
+              mode: "insensitive",
             },
           },
-          orderBy: { createdAt: "desc" },
-          skip: (parseInt(page) - 1) * parseInt(limit),
-          take: parseInt(limit),
-        }),
-        prisma.stockMovement.count({ where }),
-      ]);
-
-      res.json({
-        data: movements,
-        meta: {
-          total,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(total / parseInt(limit)),
         },
-      });
-    } catch (error) {
-      console.error("Error fetching stock movements:", error);
-      res.status(500).json({ error: "Internal server error" });
+        {
+          product: {
+            libelle: {
+              contains: searchTerm,
+              mode: "insensitive",
+            },
+          },
+        },
+        {
+          product: {
+            marque: {
+              contains: searchTerm,
+              mode: "insensitive",
+            },
+          },
+        },
+        {
+          source: {
+            contains: searchTerm,
+            mode: "insensitive",
+          },
+        },
+        {
+          reason: {
+            contains: searchTerm,
+            mode: "insensitive",
+          },
+        },
+      ];
     }
-  },
+
+    const [movements, total] = await Promise.all([
+      prisma.stockMovement.findMany({
+        where,
+        select: {
+          id: true,
+          productId: true,
+          type: true,
+          quantity: true,
+          source: true,
+          reason: true,
+          createdAt: true,
+          product: {
+            select: {
+              id: true,
+              codeArt: true,
+              marque: true,
+              libelle: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (currentPage - 1) * pageSize,
+        take: pageSize,
+      }),
+
+      prisma.stockMovement.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / pageSize) || 1;
+
+    res.json({
+      data: movements,
+      meta: {
+        total,
+        page: currentPage,
+        limit: pageSize,
+        totalPages,
+        hasNext: currentPage < totalPages,
+        hasPrevious: currentPage > 1,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching stock movements:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+},
 
   async createStockMovement(req, res) {
     try {

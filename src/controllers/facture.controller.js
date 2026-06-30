@@ -5,11 +5,18 @@ const {
   getAllFacturesWithDetails,
   annulerFacture,
 } = require("../services/facture.service");
+const { generateReference } = require("../utils/generateReference");
 
 const listFactures = async (req, res) => {
   try {
-    const factures = await getAllFacturesWithDetails();
-    res.json(factures);
+    const result = await getAllFacturesWithDetails({
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+      search: req.query.search,
+      status: req.query.status,
+    });
+
+    res.json(result);
   } catch (error) {
     console.error("Erreur lors de la récupération des factures :", error);
     res.status(500).json({ error: "Erreur serveur" });
@@ -39,13 +46,20 @@ const updatePaymentStatus = async (req, res) => {
       return res.status(404).json({ error: "Facture introuvable." });
     }
 
+    const referencePaiement = await generateReference(
+        prisma,
+        "paiement",
+        "reference",
+        "PAY"
+      );
+
     // 2. Créer un nouveau paiement
     await prisma.paiement.create({
       data: {
         facture: { connect: { id: invoiceId } },
         montant: amountFloat,
         mode: mode || "CASH",
-        reference: reference || `PAY-${Date.now()}`,
+        reference: referencePaiement,
         manager: { connect: { id: 2 } }, // à remplacer par req.user.id si disponible
       },
     });

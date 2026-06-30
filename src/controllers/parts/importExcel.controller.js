@@ -3,6 +3,7 @@ const prisma = new PrismaClient();
 const {
   enregistrerImportation,
 } = require("../../services/importation.service");
+const { buildDateFilter } = require("../../utils/dateFilter");
 
 const create_article_importation = async (req, res) => {
   try {
@@ -162,17 +163,86 @@ const importExcel = async (req, res) => {
 
 const getImports = async (req, res) => {
   try {
-    const imports = await prisma.import.findMany({
-      include: {
-        parts: true,
-      },
-      orderBy: {
-        importedAt: "desc",
+    const {
+      page = 1,
+      pageSize = 10,
+      search = "",
+      startDate,
+      endDate,
+    } = req.query;
+
+    const currentPage = Math.max(Number(page) || 1, 1);
+    const limit = Math.min(Math.max(Number(pageSize) || 10, 1), 100);
+    const skip = (currentPage - 1) * limit;
+
+    const searchTerm = search.trim();
+
+    const where = {
+      ...(searchTerm && {
+        OR: [
+          {
+            fileName: {
+              contains: searchTerm,
+              mode: "insensitive",
+            },
+          },
+          // {
+          //   status: {
+          //     contains: searchTerm,
+          //     mode: "insensitive",
+          //   },
+          // },
+        ],
+      }),
+
+      ...((startDate || endDate) && {
+        importedAt: buildDateFilter(startDate, endDate),
+      }),
+    };
+
+    const [imports, total] = await Promise.all([
+      prisma.import.findMany({
+        where,
+        orderBy: {
+          importedAt: "desc",
+        },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          fileName: true,
+          status: true,
+          importedAt: true,
+          fretAvecDD: true,
+          douane: true,
+          tva: true,
+
+          _count: {
+            select: {
+              parts: true,
+            },
+          },
+        },
+      }),
+
+      prisma.import.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    res.json({
+      data: imports,
+      pagination: {
+        total,
+        currentPage,
+        pageSize: limit,
+        totalPages,
+        hasNext: currentPage < totalPages,
+        hasPrevious: currentPage > 1,
       },
     });
-
-    res.json(imports);
   } catch (error) {
+    console.error("Erreur récupération imports:", error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -180,25 +250,99 @@ const getImports = async (req, res) => {
 const getImportDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    const details = await prisma.importedPart.findMany({
-      where: { importId: Number(id) },
-      select: {
-        id: true,
-        codeArt: true,
-        marque: true,
-        oem: true,
-        lib1: true,
-        quantity: true,
-        qttArrive: true,
-        purchasePrice: true,
-        salePrice: true,
-        margin: true,
-        poids: true,
+
+    const {
+      page = 1,
+      pageSize = 20,
+      search = "",
+    } = req.query;
+
+    const importId = Number(id);
+
+    if (!importId || Number.isNaN(importId)) {
+      return res.status(400).json({ error: "ID import invalide" });
+    }
+
+    const currentPage = Math.max(Number(page) || 1, 1);
+    const limit = Math.min(Math.max(Number(pageSize) || 20, 1), 100);
+    const skip = (currentPage - 1) * limit;
+
+    const searchTerm = search.trim();
+
+    const where = {
+      importId,
+
+      ...(searchTerm && {
+        OR: [
+          {
+            codeArt: {
+              contains: searchTerm,
+              mode: "insensitive",
+            },
+          },
+          {
+            marque: {
+              contains: searchTerm,
+              mode: "insensitive",
+            },
+          },
+          {
+            oem: {
+              contains: searchTerm,
+              mode: "insensitive",
+            },
+          },
+          {
+            lib1: {
+              contains: searchTerm,
+              mode: "insensitive",
+            },
+          },
+        ],
+      }),
+    };
+
+    const [details, total] = await Promise.all([
+      prisma.importedPart.findMany({
+        where,
+        orderBy: {
+          id: "asc",
+        },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          codeArt: true,
+          marque: true,
+          oem: true,
+          lib1: true,
+          quantity: true,
+          qttArrive: true,
+          purchasePrice: true,
+          salePrice: true,
+          margin: true,
+          poids: true,
+        },
+      }),
+
+      prisma.importedPart.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit) || 1;
+
+    res.json({
+      data: details,
+      pagination: {
+        total,
+        currentPage,
+        pageSize: limit,
+        totalPages,
+        hasNext: currentPage < totalPages,
+        hasPrevious: currentPage > 1,
       },
     });
-
-    res.json(details);
   } catch (error) {
+    console.error("Erreur détail import:", error);
     res.status(500).json({ error: error.message });
   }
 };

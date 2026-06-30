@@ -1,6 +1,6 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
-
+const { generateReference } = require("../utils/generateReference");
 class OrderService {
   static async getOrders({
     supplierId,
@@ -207,9 +207,16 @@ class OrderService {
         throw new Error("Aucun produit sélectionné");
       }
 
+      const referenceReap = await generateReference(
+        tx,
+        "reapprovisionnement",
+        "reference",
+        "REA"
+      );
+
       const reappro = await tx.reapprovisionnement.create({
         data: {
-          reference: `REA-${Date.now()}`,
+          reference: referenceReap,
           status: status || "DRAFT", // Valeur par défaut
           userId: parseInt(userId),
           totalAmount: parseFloat(totalValue),

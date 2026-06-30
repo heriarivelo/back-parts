@@ -5,6 +5,9 @@ const {
   updateUser,
   deleteUser,
   createUser,
+  getMyProfile,
+  updateMyProfile,
+  changeMyPassword,
 } = require("../controllers/user.controller.js");
 // const AuthController = require("../controllers/auth.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
@@ -15,6 +18,9 @@ const router = express.Router();
 // router.use(AuthController(["ADMIN"]));
 
 router.get("/", getAllUsers);
+router.get("/profile", authMiddleware, getMyProfile);
+router.put("/profile", authMiddleware, updateMyProfile);
+router.put("/change-password", authMiddleware, changeMyPassword);
 router.get("/:id", getUserById);
 router.put("/:id", updateUser);
 router.delete("/:id", deleteUser, authMiddleware);

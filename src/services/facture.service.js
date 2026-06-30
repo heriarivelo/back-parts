@@ -2,57 +2,8 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 
-const getAllFacturesWithDetails = async () => {
-  const factures = await prisma.facture.findMany({
-    include: {
-      commandeVente: {
-        include: {
-          customer: true,
-          pieces: {
-            include: {
-              product: true,
-              customProduct: true,
-            },
-          },
-        },
-      },
-      remises: true,
-      paiements: true,
-      createdBy: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-
-  return factures.map(facture => {
-    const commande = facture.commandeVente;
-    const pieces = (commande.pieces || []).map(piece => {
-      // unifier le produit
-      const unified = piece.product || piece.customProduct || null;
-
-      // on crée un nouveau champ product unifié, et on supprime ou ignore les deux originaux
-      const { product, customProduct, ...restPiece } = piece;
-
-      return {
-        ...restPiece,
-        product: unified,
-      };
-    });
-
-    return {
-      ...facture,
-      commandeVente: {
-        ...commande,
-        pieces,
-      },
-    };
-  });
-};
-
-
 // const getAllFacturesWithDetails = async () => {
-//   return await prisma.facture.findMany({
+//   const factures = await prisma.facture.findMany({
 //     include: {
 //       commandeVente: {
 //         include: {
@@ -73,7 +24,165 @@ const getAllFacturesWithDetails = async () => {
 //       createdAt: "desc",
 //     },
 //   });
+
+//   return factures.map(facture => {
+//     const commande = facture.commandeVente;
+//     const pieces = (commande.pieces || []).map(piece => {
+//       // unifier le produit
+//       const unified = piece.product || piece.customProduct || null;
+
+//       // on crée un nouveau champ product unifié, et on supprime ou ignore les deux originaux
+//       const { product, customProduct, ...restPiece } = piece;
+
+//       return {
+//         ...restPiece,
+//         product: unified,
+//       };
+//     });
+
+//     return {
+//       ...facture,
+//       commandeVente: {
+//         ...commande,
+//         pieces,
+//       },
+//     };
+//   });
 // };
+
+const getAllFacturesWithDetails = async ({
+  page = 1,
+  pageSize = 10,
+  search = "",
+  status = "TOUS",
+} = {}) => {
+  page = Math.max(Number(page) || 1, 1);
+  pageSize = Math.min(Math.max(Number(pageSize) || 10, 1), 100);
+
+  const skip = (page - 1) * pageSize;
+  const searchTerm = search.trim();
+
+  const where = {
+    ...(status && status !== "TOUS" && {
+      status,
+    }),
+
+    ...(searchTerm && {
+      OR: [
+        { referenceFacture: { contains: searchTerm, mode: "insensitive" } },
+        { commandeVente: { reference: { contains: searchTerm, mode: "insensitive" } } },
+        { commandeVente: { customer: { nom: { contains: searchTerm, mode: "insensitive" } } } },
+        { commandeVente: { customer: { telephone: { contains: searchTerm, mode: "insensitive" } } } },
+      ],
+    }),
+  };
+
+  const [factures, totalCount] = await Promise.all([
+    prisma.facture.findMany({
+      where,
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip,
+      take: pageSize,
+      select: {
+        id: true,
+        referenceFacture: true,
+        prixTotal: true,
+        montantPaye: true,
+        resteAPayer: true,
+        status: true,
+        paidAt: true,
+        createdAt: true,
+
+        commandeVente: {
+          select: {
+            id: true,
+            reference: true,
+            totalAmount: true,
+            status: true,
+            commandetype: true,
+            createdAt: true,
+
+            customer: {
+              select: {
+                id: true,
+                nom: true,
+                telephone: true,
+                email: true,
+              },
+            },
+
+            _count: {
+              select: {
+                pieces: true,
+              },
+            },
+          },
+        },
+
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        remises: {
+          select: {
+            type: true,
+            taux: true,
+            montant: true,
+          },
+        },
+
+        _count: {
+          select: {
+            remises: true,
+            paiements: true,
+          },
+        },
+      },
+    }),
+
+    prisma.facture.count({ where }),
+  ]);
+
+  const formattedFactures = factures.map((facture) => {
+  const remiseTotale = facture.remises.reduce((sum, remise) => {
+    if (remise.type === "POURCENTAGE" && remise.taux) {
+      return sum + (Number(facture.commandeVente.totalAmount) * Number(remise.taux)) / 100;
+    }
+
+    if (remise.montant) {
+      return sum + Number(remise.montant);
+    }
+
+    return sum;
+  }, 0);
+
+  return {
+    ...facture,
+    remiseTotale,
+    hasRemise: remiseTotale > 0,
+    remises: undefined,
+  };
+});
+
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  return {
+    data: formattedFactures,
+    pagination: {
+      currentPage: page,
+      pageSize,
+      totalCount,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrevious: page > 1,
+    },
+  };
+};
 
 const annulerFacture = async (invoiId, userId, raison) => {
   if (!invoiId || !userId || !raison) {

@@ -9,13 +9,15 @@ const {
   getAllStocks,
   getProductDistribution,
   updateStockDistribution,
-  getAllStocksWithoutPagination
+  getAllStocksWithoutPagination,
+  searchStockLocations
 } = require("../controllers/stock.controller");
 
 router.get("/", getStockStatus);
 // router.put("/", updateStock);
 router.get("/list", getAllStocks); // pour le stock admin merci
 router.get("/all", getAllStocksWithoutPagination);
+router.get('/locations', searchStockLocations);
 router.get("/analytics", getStockAnalytics);
 router.get("/available", getAvailableProducts);
 router.post("/distribution", updateStockDistribution);

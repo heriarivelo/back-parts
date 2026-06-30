@@ -1,56 +1,108 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const orderService = require("../services/order.service");
+const { generateReference } = require("../utils/generateReference");
 
 const getCommandesHistorique = async (req, res) => {
   try {
-    // Récupération des paramètres de pagination depuis la requête
-    const page = parseInt(req.query.page) || 1; // Page par défaut : 1
-    const pageSize = parseInt(req.query.pageSize) || 10; // Taille par défaut : 10 éléments
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(req.query.pageSize) || 10, 1), 100);
+    const search = req.query.search?.trim() || "";
+    const status = req.query.status || "";
 
-    // Calcul du nombre d'éléments à sauter
     const skip = (page - 1) * pageSize;
 
-    // Requête avec pagination
+    const where = {
+      // Je conseille d'exclure EN_ATTENTE de l'historique
+      status: status
+        ? status
+        : {
+            not: "EN_ATTENTE",
+          },
+
+      ...(search && {
+        OR: [
+          { reference: { contains: search, mode: "insensitive" } },
+          { customer: { nom: { contains: search, mode: "insensitive" } } },
+          { customer: { telephone: { contains: search, mode: "insensitive" } } },
+          { customer: { email: { contains: search, mode: "insensitive" } } },
+        ],
+      }),
+    };
+
     const [commandes, totalCount] = await Promise.all([
       prisma.commandeVente.findMany({
+        where,
         orderBy: { createdAt: "desc" },
-        include: {
-          customer: true,
-          manager: true,
-          pieces: {
-            include: {
-              product: true,
-              customProduct:true,
+        skip,
+        take: pageSize,
+        select: {
+          id: true,
+          reference: true,
+          createdAt: true,
+          status: true,
+          totalAmount: true,
+          type: true,
+          commandetype: true,
+
+          customer: {
+            select: {
+              id: true,
+              nom: true,
+              telephone: true,
+              email: true,
             },
           },
+
+          manager: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+
+          _count: {
+            select: {
+              pieces: true,
+              factures: true,
+            },
+          },
+
           factures: {
-            include: {
-              remises: true,
-              paiements: true,
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              referenceFacture: true,
+              status: true,
+              prixTotal: true,
+              montantPaye: true,
+              resteAPayer: true,
+              createdAt: true,
             },
           },
         },
-        skip: skip,
-        take: pageSize,
       }),
-      prisma.commandeVente.count(), // Compte total pour calculer le nombre de pages
+
+      prisma.commandeVente.count({ where }),
     ]);
 
-    // Calcul des métadonnées de pagination
     const totalPages = Math.ceil(totalCount / pageSize);
-    const hasNext = page < totalPages;
-    const hasPrevious = page > 1;
 
     res.json({
-      data: commandes,
+      data: commandes.map((commande) => ({
+        ...commande,
+        latestFacture: commande.factures?.[0] || null,
+        factures: undefined,
+      })),
       pagination: {
         currentPage: page,
         pageSize,
         totalCount,
         totalPages,
-        hasNext,
-        hasPrevious,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
       },
     });
   } catch (error) {
@@ -71,15 +123,54 @@ const previewInvoice = async (req, res) => {
 
 const getAllCommandes = async (req, res) => {
   try {
-    const commandes = await orderService.getAllCommandes();
-    res.status(200).json(commandes);
-  } catch (error) {
-    console.error("Erreur dans getAllCommandes:", error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur lors de la récupération des commandes.",
-      error: error.message,
+    const result = await orderService.getAllCommandes({
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+      search: req.query.search,
     });
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const getCommandeDetails = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+
+    if (!orderId || Number.isNaN(orderId)) {
+      return res.status(400).json({ error: "ID commande invalide" });
+    }
+
+    const commande = await prisma.commandeVente.findUnique({
+      where: { id: orderId },
+      include: {
+        customer: true,
+        manager: true,
+        pieces: {
+          include: {
+            product: true,
+            customProduct: true,
+          },
+        },
+        factures: {
+          include: {
+            remises: true,
+            paiements: true,
+          },
+        },
+      },
+    });
+
+    if (!commande) {
+      return res.status(404).json({ error: "Commande non trouvée" });
+    }
+
+    res.json(commande);
+  } catch (error) {
+    console.error("Erreur détail commande:", error);
+    res.status(500).json({ error: "Erreur serveur" });
   }
 };
 
@@ -248,10 +339,17 @@ const createOrders = async (req, res) => {
         }
       }
 
+      const referenceCommande = await generateReference(
+        tx,
+        "commandeVente",
+        "reference",
+        "CMD"
+      );
+
       // 🔹 3. Création de la commande
       const newOrder = await tx.commandeVente.create({
         data: {
-          reference: `CMD-${Date.now()}`,
+          reference: referenceCommande,
           customerId: finalCustomerId,
           managerId,
           totalAmount,
@@ -272,19 +370,19 @@ const createOrders = async (req, res) => {
       console.log("✅ Commande créée:", newOrder.reference);
 
       // 🔹 4. Mouvement de stock uniquement pour les produits existants
-      const stockMovements = items
-        .filter((i) => i.productId) // exclut les produits particuliers
-        .map((item) => ({
-          productId: item.productId,
-          quantity: -item.quantity,
-          type: "COMMANDE",
-          source: `Commande: ${newOrder.reference}`,
-          reason: info.vehicule ? `Véhicule: ${info.vehicule}` : null,
-        }));
+      // const stockMovements = items
+      //   .filter((i) => i.productId) // exclut les produits particuliers
+      //   .map((item) => ({
+      //     productId: item.productId,
+      //     quantity: -item.quantity,
+      //     type: "COMMANDE",
+      //     source: `Commande: ${newOrder.reference}`,
+      //     reason: info.vehicule ? `Véhicule: ${info.vehicule}` : null,
+      //   }));
 
-      if (stockMovements.length > 0) {
-        await tx.stockMovement.createMany({ data: stockMovements });
-      }
+      // if (stockMovements.length > 0) {
+      //   await tx.stockMovement.createMany({ data: stockMovements });
+      // }
 
       return newOrder;
     });
@@ -356,10 +454,16 @@ const validateOrder = async (req, res) => {
 
     // Transaction
     const result = await prisma.$transaction(async (tx) => {
+      const referenceFacture = await generateReference(
+        tx,
+        "facture",
+        "referenceFacture",
+        "FAC"
+      );
       // Création facture
       const invoice = await tx.facture.create({
         data: {
-          referenceFacture: req.body.referenceFacture || `FAC-${Date.now()}`,
+          referenceFacture,
           commandeVente: { connect: { id: order.id } },
           prixTotal: finalAmount,
           montantPaye: paidAmount,
@@ -530,14 +634,108 @@ const getClientProCommandeWithDetails = async (req, res) => {
   }
 };
 
+const cancelOrder = async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id, 10);
+    const { reason } = req.body;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({ error: "ID commande invalide" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const order = await tx.commandeVente.findUnique({
+        where: { id: orderId },
+        include: {
+          pieces: true,
+          factures: true,
+        },
+      });
+
+      if (!order) {
+        throw new Error("Commande introuvable");
+      }
+
+      if (order.status === "ANNULEE") {
+        throw new Error("Cette commande est déjà annulée");
+      }
+
+      if (order.status === "LIVREE") {
+        throw new Error("Une commande livrée ne peut pas être annulée");
+      }
+
+      const shouldRestoreStock = order.status === "TRAITEMENT";
+
+      if (shouldRestoreStock) {
+        for (const piece of order.pieces) {
+          if (!piece.productId) {
+            continue;
+          }
+
+          await tx.stock.updateMany({
+            where: { productId: piece.productId },
+            data: {
+              quantite: {
+                increment: piece.quantite,
+              },
+              quantiteVendu: {
+                decrement: piece.quantite,
+              },
+            },
+          });
+
+          await tx.stockMovement.create({
+            data: {
+              productId: piece.productId,
+              type: "CANCEL_ORDER",
+              quantity: piece.quantite,
+              source: `ANNULATION_COMMANDE:${order.reference}`,
+              reason: reason || "Annulation commande",
+            },
+          });
+        }
+
+        await tx.facture.updateMany({
+          where: { commandeId: order.id },
+          data: {
+            status: "ANNULEE",
+          },
+        });
+      }
+
+      const cancelledOrder = await tx.commandeVente.update({
+        where: { id: order.id },
+        data: {
+          status: "ANNULEE",
+        },
+      });
+
+      return cancelledOrder;
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Commande annulée avec succès",
+      order: result,
+    });
+  } catch (error) {
+    console.error("Erreur annulation commande:", error);
+    return res.status(400).json({
+      success: false,
+      error: error.message || "Erreur lors de l’annulation de la commande",
+    });
+  }
+};
+
 
 module.exports = {
   getCommandesHistorique,
   createOrders,
   // createOrder,
   previewInvoice,
-  // createCommande,
+  cancelOrder,
   getAllCommandes,
+  getCommandeDetails,
   getOrderDetails,
   validateOrder,
   getClientProCommandeWithDetails
