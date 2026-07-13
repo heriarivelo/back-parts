@@ -11,6 +11,5 @@ router.get("/all", orderController.getAllCommandes);
 router.get("/:id", orderController.getOrderDetails);
 router.get("/:id/details", orderController.getCommandeDetails)
 router.post("/:orderId/validate", orderController.validateOrder);
-router.get('/:orderId/details', orderController.getClientProCommandeWithDetails);
 
 module.exports = router;

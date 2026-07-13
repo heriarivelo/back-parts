@@ -108,50 +108,6 @@ async getAllCommandes({ page = 1, pageSize = 10, search = "" } = {}) {
   }
 }
 
-
-async getClientProCommandeWithDetails(orderId) {
-  // Utiliser findUnique au lieu de findMany pour récupérer un seul objet
-  const commande = await prisma.commandeVente.findUnique({
-    where: { 
-      id: orderId 
-    },
-    include: {
-      pieces: {
-        include: {
-          product: true,
-          customProduct: true
-        }
-      },
-      factures: {
-        include: {
-          remises: true,
-          paiements: true,
-        },
-      },
-    }
-  });
-
-  if (!commande) {
-    return null;
-  }
-
-  // Transformer les pièces
-  const pieces = (commande.pieces || []).map(piece => {
-    const unified = piece.product || piece.customProduct || null;
-    return {
-      ...piece,
-      product: unified
-    };
-  });
-
-  // Retourner un objet unique, pas un tableau
-  return {
-    ...commande,
-    pieces
-  };
-}
-
-
 }
 
 module.exports = new OrderService();

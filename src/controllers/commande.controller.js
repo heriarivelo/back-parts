@@ -369,21 +369,6 @@ const createOrders = async (req, res) => {
 
       console.log("✅ Commande créée:", newOrder.reference);
 
-      // 🔹 4. Mouvement de stock uniquement pour les produits existants
-      // const stockMovements = items
-      //   .filter((i) => i.productId) // exclut les produits particuliers
-      //   .map((item) => ({
-      //     productId: item.productId,
-      //     quantity: -item.quantity,
-      //     type: "COMMANDE",
-      //     source: `Commande: ${newOrder.reference}`,
-      //     reason: info.vehicule ? `Véhicule: ${info.vehicule}` : null,
-      //   }));
-
-      // if (stockMovements.length > 0) {
-      //   await tx.stockMovement.createMany({ data: stockMovements });
-      // }
-
       return newOrder;
     });
 
@@ -614,26 +599,6 @@ async function processStock(tx, piece, invoice) {
   }
 }
 
-const getClientProCommandeWithDetails = async (req, res) => {
-  try {
-    const orderId = parseInt(req.params.orderId, 10);
-    if (isNaN(orderId)) {
-      return res.status(400).json({ error: 'ID de commande invalide' });
-    }
-
-    const resultat = await orderService.getClientProCommandeWithDetails(orderId);
-    if (!resultat) {
-      return res.status(404).json({ error: 'Commande introuvable' });
-    }
-
-    // Retourner directement l'objet, pas dans un tableau
-    return res.status(200).json(resultat);
-  } catch (error) {
-    console.error('Erreur dans getClientProCommandeWithDetails:', error);
-    return res.status(500).json({ error: 'Erreur serveur lors de la récupération de la commande' });
-  }
-};
-
 const cancelOrder = async (req, res) => {
   try {
     const orderId = parseInt(req.params.id, 10);
@@ -737,6 +702,5 @@ module.exports = {
   getAllCommandes,
   getCommandeDetails,
   getOrderDetails,
-  validateOrder,
-  getClientProCommandeWithDetails
+  validateOrder
 };
